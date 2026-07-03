@@ -1,0 +1,14 @@
+{
+  "id": "rock1",
+
+  "name": "Rock1",
+
+  "category": "decorative",
+
+  "texture": "assets/world/rocks/rock1.png",
+
+  "width": 120,
+  "height": 120,
+
+  "collision": true
+}

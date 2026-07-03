@@ -1,0 +1,136 @@
+{
+  "id": "loc3",
+  "biome": "Forest",
+  "rain": false,
+  "snow": false,
+  "fog": false,
+  "worldX": 0,
+  "worldY": 1,
+  "objects": [
+    {
+      "objectId": "tree",
+      "x": 695,
+      "y": 203
+    },
+    {
+      "objectId": "tree",
+      "x": 635,
+      "y": 133
+    },
+    {
+      "objectId": "tree",
+      "x": 519,
+      "y": 90
+    },
+    {
+      "objectId": "tree",
+      "x": 418,
+      "y": 74
+    },
+    {
+      "objectId": "tree",
+      "x": 347,
+      "y": 99
+    },
+    {
+      "objectId": "tree",
+      "x": 229,
+      "y": 272
+    },
+    {
+      "objectId": "tree",
+      "x": 240,
+      "y": 292
+    },
+    {
+      "objectId": "tree",
+      "x": 334,
+      "y": 331
+    },
+    {
+      "objectId": "tree",
+      "x": 373,
+      "y": 345
+    },
+    {
+      "objectId": "rock2",
+      "x": 414,
+      "y": 486
+    },
+    {
+      "objectId": "rock2",
+      "x": 681,
+      "y": 522
+    },
+    {
+      "objectId": "rock2",
+      "x": 750,
+      "y": 531
+    },
+    {
+      "objectId": "rock2",
+      "x": 566,
+      "y": 531
+    },
+    {
+      "objectId": "rock2",
+      "x": 617,
+      "y": 533
+    },
+    {
+      "objectId": "rock2",
+      "x": 727,
+      "y": 536
+    },
+    {
+      "objectId": "rock2",
+      "x": 545,
+      "y": 544
+    },
+    {
+      "objectId": "rock2",
+      "x": 825,
+      "y": 522
+    },
+    {
+      "objectId": "rock2",
+      "x": 484,
+      "y": 566
+    },
+    {
+      "objectId": "rock2",
+      "x": 392,
+      "y": 561
+    },
+    {
+      "objectId": "rock2",
+      "x": 844,
+      "y": 534
+    },
+    {
+      "objectId": "rock2",
+      "x": 395,
+      "y": 596
+    },
+    {
+      "objectId": "rock2",
+      "x": 790,
+      "y": 499
+    },
+    {
+      "objectId": "rock2",
+      "x": 652,
+      "y": 542
+    },
+    {
+      "objectId": "rock2",
+      "x": 313,
+      "y": 630
+    },
+    {
+      "objectId": "rock2",
+      "x": 547,
+      "y": 566
+    }
+  ]
+}

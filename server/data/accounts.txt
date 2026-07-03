@@ -1,0 +1,6 @@
+test:111:test:Green:Sword:false
+3245:4352:null:null:null:false
+123:123:тест:Green:Shield:false
+3465:3425:null:null:null:false
+1234:1234:test:Green:Sword:false
+testik:testik:уби ватьцы gun:Blue:Sword:false

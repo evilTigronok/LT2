@@ -1,0 +1,81 @@
+{
+  "id": "loc2",
+  "biome": "Forest",
+  "rain": false,
+  "snow": false,
+  "fog": false,
+  "worldX": 1,
+  "worldY": 0,
+  "objects": [
+    {
+      "objectId": "green_tree",
+      "x": 409,
+      "y": 156
+    },
+    {
+      "objectId": "green_tree",
+      "x": 323,
+      "y": 215
+    },
+    {
+      "objectId": "green_tree",
+      "x": 303,
+      "y": 294
+    },
+    {
+      "objectId": "green_tree",
+      "x": 327,
+      "y": 390
+    },
+    {
+      "objectId": "green_tree",
+      "x": 387,
+      "y": 431
+    },
+    {
+      "objectId": "green_tree",
+      "x": 494,
+      "y": 470
+    },
+    {
+      "objectId": "green_tree",
+      "x": 601,
+      "y": 441
+    },
+    {
+      "objectId": "green_tree",
+      "x": 664,
+      "y": 370
+    },
+    {
+      "objectId": "green_tree",
+      "x": 700,
+      "y": 297
+    },
+    {
+      "objectId": "green_tree",
+      "x": 695,
+      "y": 203
+    },
+    {
+      "objectId": "green_tree",
+      "x": 635,
+      "y": 133
+    },
+    {
+      "objectId": "green_tree",
+      "x": 519,
+      "y": 90
+    },
+    {
+      "objectId": "green_tree",
+      "x": 418,
+      "y": 74
+    },
+    {
+      "objectId": "green_tree",
+      "x": 347,
+      "y": 99
+    }
+  ]
+}

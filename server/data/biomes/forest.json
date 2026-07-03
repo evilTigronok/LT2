@@ -1,0 +1,12 @@
+{
+  "id": "forest",
+
+  "ambientColor": "#88AA88",
+
+  "allowedWeather": [
+    "rain",
+    "fog"
+  ],
+
+  "footstepSound": "grass"
+}

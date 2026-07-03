@@ -1,0 +1,4 @@
+decorative/tree.json
+decorative/green_tree.json
+decorative/rock1.json
+decorative/rock2.json

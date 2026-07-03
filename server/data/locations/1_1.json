@@ -1,0 +1,10 @@
+{
+  "id": "loc4",
+  "biome": "Forest",
+  "rain": false,
+  "snow": false,
+  "fog": false,
+  "worldX": 1,
+  "worldY": 1,
+  "objects": []
+}
