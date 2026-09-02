@@ -1,7 +1,7 @@
 package game.ui;
 
+import game.client.HostManager;
 import game.client.NetworkClient;
-import game.ui.register.*;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
@@ -12,40 +12,34 @@ public class SceneManager {
 
     private final NetworkClient client;
 
-    private String username;
+    private final HostManager hostManager;
 
-    private RegistrationSession pendingSession;
-
-
-    public SceneManager(Stage stage,
-                        NetworkClient client) {
+    public SceneManager(
+            Stage stage,
+            NetworkClient client
+    ) {
 
         this.stage = stage;
         this.client = client;
-        client.setTokenValidHandler(() -> {
-            onTokenValid();
-        });
-        client.setLoginSuccessHandler(() -> {
-            show(SceneType.WORLD);
-        });
-        client.setTokenInvalidHandler(() -> {
-            onTokenInvalid();
-        });
+
+        this.hostManager =
+                new HostManager();
     }
 
-    public void setPendingSession(RegistrationSession session) {
-        this.pendingSession = session;
-    }
-    public void onTokenValid() {
-        showLoginPassword(pendingSession);
+    public HostManager getHostManager() {
+        return hostManager;
     }
 
-    public void onTokenInvalid() {
-        System.out.println("Invalid token");
+    public NetworkClient getClient() {
+        return client;
+    }
+
+    public Stage getStage() {
+        return stage;
     }
 
     // =====================================
-    // BASIC SCENES
+    // SCENES
     // =====================================
 
     public void show(SceneType type) {
@@ -54,11 +48,51 @@ public class SceneManager {
 
         switch (type) {
 
-            case LOGIN:
+            case MAIN_MENU:
 
-                root = new LoginScene(
-                        this
-                ).getRoot();
+                root =
+                        new MainMenuScene(
+                                this
+                        ).getRoot();
+
+                break;
+
+            case MULTIPLAYER:
+
+                root =
+                        new MultiplayerScene(
+                                this
+                        ).getRoot();
+
+                break;
+
+            case CREATE_GAME:
+
+                root =
+                        new CreateGameScene(
+                                this,
+                                client
+                        ).getRoot();
+
+                break;
+
+            case JOIN_GAME:
+
+                root =
+                        new JoinGameScene(
+                                this,
+                                client
+                        ).getRoot();
+
+                break;
+
+            case LOBBY:
+
+                root =
+                        new LobbyScene(
+                                this,
+                                client
+                        ).getRoot();
 
                 break;
 
@@ -68,34 +102,22 @@ public class SceneManager {
                         new WorldScene(
                                 this,
                                 client,
-                                username
+                                client.getUsername()
                         );
 
-                client.setWorldScene(worldScene);
+                client.setWorldScene(
+                        worldScene
+                );
 
-                root = worldScene.getRoot();
-
-                break;
-
-            case CHARACTER:
-
-                root = new CharacterScene(
-                        this
-                ).getRoot();
-
-                break;
-
-            case COMBAT:
-
-                root = new CombatScene(
-                        this
-                ).getRoot();
+                root =
+                        worldScene.getRoot();
 
                 break;
 
             default:
+
                 throw new IllegalStateException(
-                        "Unknown scene"
+                        "Unknown scene: " + type
                 );
         }
 
@@ -108,164 +130,5 @@ public class SceneManager {
         );
 
         stage.setMaximized(true);
-    }
-
-    // =====================================
-    // REGISTRATION FLOW
-    // =====================================
-
-    public void startRegistration() {
-
-        RegistrationSession session =
-                new RegistrationSession();
-
-        showRoleSelect(session);
-    }
-
-    public void showRoleSelect(
-            RegistrationSession session
-    ) {
-
-        RoleSelectScene scene =
-                new RoleSelectScene(
-                        this,
-                        session
-                );
-
-        stage.setScene(
-                new Scene(
-                        scene.getRoot(),
-                        900,
-                        700
-                )
-        );
-    }
-
-    public void showToken(
-            RegistrationSession session
-    ) {
-
-        TokenScene scene =
-                new TokenScene(
-                        this,
-                        session
-                );
-
-        stage.setScene(
-                new Scene(
-                        scene.getRoot(),
-                        900,
-                        700
-                )
-        );
-    }
-
-    public void showLoginPassword(
-            RegistrationSession session
-    ) {
-
-        LoginPasswordStep scene =
-                new LoginPasswordStep(
-                        this,
-                        session
-                );
-
-        stage.setScene(
-                new Scene(
-                        scene.getRoot(),
-                        900,
-                        700
-                )
-        );
-    }
-
-    public void showAgreement(RegistrationSession session) {
-
-        AgreementStep scene =
-                new AgreementStep(
-                        this,
-                        session,
-                        () -> showCharacter(session)
-                );
-
-        stage.setScene(new Scene(scene, 900, 700));
-    }
-
-    public void showCharacter(
-            RegistrationSession session
-    ) {
-
-        CharacterStep scene =
-                new CharacterStep(
-                        this,
-                        session
-                );
-
-        stage.setScene(
-                new Scene(
-                        scene.getRoot(),
-                        900,
-                        700
-                )
-        );
-    }
-
-    public void showStarterItem(
-            RegistrationSession session
-    ) {
-
-        StarterItemStep scene =
-                new StarterItemStep(
-                        this,
-                        session
-                );
-
-        stage.setScene(
-                new Scene(
-                        scene.getRoot(),
-                        900,
-                        700
-                )
-        );
-    }
-
-    public void finishRegistration(
-            RegistrationSession session
-    ) {
-
-        sendRegister(session);
-
-        show(SceneType.LOGIN);
-    }
-
-    // =====================================
-    // NETWORK
-    // =====================================
-
-    public void sendRegister(RegistrationSession session) {
-
-        client.send(
-                "REGISTER:" +
-                        session.getLogin() + ":" +
-                        session.getPassword() + ":" +
-                        session.getFullName() + ":" +
-                        session.getEyeColor() + ":" +
-                        session.getStarterItem()
-        );
-    }
-
-    // =====================================
-    // USER
-    // =====================================
-
-    public void setUsername(
-            String username
-    ) {
-
-        this.username = username;
-    }
-
-    public NetworkClient getClient() {
-        return client;
     }
 }

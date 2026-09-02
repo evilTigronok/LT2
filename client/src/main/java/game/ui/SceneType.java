@@ -1,11 +1,16 @@
 package game.ui;
 
 public enum SceneType {
-    LOGIN,
-    REGISTER,
-    TOKEN,
-    ROLE_SELECT,
-    WORLD,
-    CHARACTER,
-    COMBAT
+
+    MAIN_MENU,
+
+    MULTIPLAYER,
+
+    CREATE_GAME,
+
+    JOIN_GAME,
+
+    LOBBY,
+
+    WORLD
 }

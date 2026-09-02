@@ -1,6 +1,5 @@
 package game.ui;
 
-import game.client.Config;
 import game.client.NetworkClient;
 import javafx.application.Application;
 import javafx.stage.Stage;
@@ -12,19 +11,37 @@ public class RPGApplication extends Application {
     @Override
     public void start(Stage stage) {
 
-        NetworkClient client = new NetworkClient();
-        client.connect(
-                Config.SERVER_HOST,
-                Config.SERVER_PORT
+        NetworkClient client =
+                new NetworkClient();
+
+        sceneManager =
+                new SceneManager(
+                        stage,
+                        client
+                );
+
+        stage.setTitle(
+                "LT2 RPG"
         );
 
-        sceneManager = new SceneManager(stage, client);
-
-        stage.setTitle("LT2 RPG");
-
-        sceneManager.show(SceneType.LOGIN);
+        sceneManager.show(
+                SceneType.MAIN_MENU
+        );
 
         stage.show();
+    }
+
+    @Override
+    public void stop() {
+
+        if (sceneManager != null) {
+
+            sceneManager.getClient()
+                    .disconnect();
+
+            sceneManager.getHostManager()
+                    .stopServer();
+        }
     }
 
     public static void main(String[] args) {

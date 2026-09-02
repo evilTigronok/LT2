@@ -1,17 +1,15 @@
 package game.client;
 
+import com.google.gson.Gson;
 import game.network.dto.PlayerState;
+import game.network.packets.LocationPacket;
 import game.network.packets.WorldStatePacket;
+import game.ui.LobbyScene;
 import game.ui.WorldScene;
-
-import game.world.data.LocationData;
 import javafx.application.Platform;
 
 import java.io.*;
 import java.net.Socket;
-
-import com.google.gson.Gson;
-import game.network.packets.LocationPacket;
 
 public class NetworkClient {
 
@@ -24,74 +22,89 @@ public class NetworkClient {
 
     private PrintWriter out;
 
-    private Runnable loginSuccessHandler;
+    private Thread listenerThread;
 
-    private Runnable tokenValidHandler;
+    private Thread pingThread;
 
-    private Runnable tokenInvalidHandler;
+    private volatile boolean connected;
+
+    private boolean host;
+
+    private String playerId;
+
+    private long ping;
 
     private WorldScene worldScene;
 
-    private LocationData pendingLocation;
+    private LobbyScene lobbyScene;
 
-    private long ping = 0;
+    private Runnable gameStartHandler;
+
+    private String lastLobbyState;
+
+    private String username;
 
     public long getPing() {
         return ping;
     }
 
-    public void setWorldScene(WorldScene worldScene) {
+    public boolean isConnected() {
+        return connected;
+    }
 
-        this.worldScene = worldScene;
+    public String getPlayerId() {
+        return playerId;
+    }
 
-        if (pendingLocation != null) {
+    public boolean isHost() {
+        return host;
+    }
+
+    public void setHost(boolean host) {
+        this.host = host;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    // =====================================
+    // CONNECTION
+    // =====================================
+
+    public synchronized boolean connect(
+            String address,
+            int port,
+            boolean host
+    ) {
+
+        if (connected) {
 
             System.out.println(
-                    "LOAD PENDING LOCATION"
+                    "Already connected"
             );
 
-            LocationData loc = pendingLocation;
-            pendingLocation = null;
-
-            Platform.runLater(() ->
-                    worldScene.loadLocation(loc)
-            );
+            return true;
         }
-    }
-
-    public void setLoginSuccessHandler(
-            Runnable loginSuccessHandler
-    ) {
-
-        this.loginSuccessHandler =
-                loginSuccessHandler;
-    }
-
-    public void setTokenValidHandler(
-            Runnable tokenValidHandler
-    ) {
-
-        this.tokenValidHandler =
-                tokenValidHandler;
-    }
-
-    public void setTokenInvalidHandler(
-            Runnable tokenInvalidHandler
-    ) {
-
-        this.tokenInvalidHandler =
-                tokenInvalidHandler;
-    }
-
-    public void connect(
-            String host,
-            int port
-    ) {
 
         try {
 
+            System.out.println(
+                    "Connecting to "
+                            + address
+                            + ":"
+                            + port
+            );
+
             socket =
-                    new Socket(host, port);
+                    new Socket(
+                            address,
+                            port
+                    );
 
             in =
                     new BufferedReader(
@@ -106,79 +119,229 @@ public class NetworkClient {
                             true
                     );
 
-            System.out.println(
-                    "Connected to server"
-            );
+            this.host = host;
+
+            connected = true;
 
             startListener();
 
             startPingLoop();
 
+            return true;
+
         } catch (IOException e) {
 
+            System.err.println(
+                    "Connection failed"
+            );
+
             e.printStackTrace();
+
+            disconnect();
+
+            return false;
         }
     }
 
+    public synchronized void disconnect() {
+
+        connected = false;
+
+        if (pingThread != null) {
+            pingThread.interrupt();
+            pingThread = null;
+        }
+
+        try {
+
+            if (socket != null) {
+                socket.close();
+            }
+
+        } catch (IOException ignored) {
+        }
+
+        socket = null;
+        in = null;
+        out = null;
+
+        System.out.println(
+                "Network disconnected"
+        );
+    }
+
     // =====================================
-    // LISTENER THREAD
+    // HELLO
+    // =====================================
+
+    public void sendHello(
+            String playerName
+    ) {
+
+        if (playerName == null
+                || playerName.isBlank()) {
+
+            playerName =
+                    "Player-" + playerId;
+        }
+
+        send(
+                "HELLO:"
+                        + (host ? "HOST" : "CLIENT")
+                        + ":"
+                        + playerName
+        );
+    }
+
+    // =====================================
+    // LISTENER
     // =====================================
 
     private void startListener() {
 
-        Thread thread = new Thread(() -> {
+        listenerThread =
+                new Thread(
+                        () -> {
 
-            try {
+                            try {
 
-                String msg;
+                                String msg;
 
-                while ((msg = in.readLine()) != null) {
+                                while (
+                                        connected
+                                                && (msg = in.readLine()) != null
+                                ) {
 
-                    System.out.println(
-                            "SERVER: " + msg
-                    );
+                                    handle(msg);
+                                }
 
-                    handle(msg);
-                }
+                            } catch (IOException e) {
 
-            } catch (IOException e) {
+                                if (connected) {
+                                    System.out.println(
+                                            "Server connection lost"
+                                    );
+                                }
 
-                e.printStackTrace();
-            }
-        });
+                            } finally {
 
-        thread.setDaemon(true);
-        thread.start();
+                                connected = false;
+                            }
+
+                        },
+                        "NetworkClient-Listener"
+                );
+
+        listenerThread.setDaemon(true);
+
+        listenerThread.start();
     }
 
     // =====================================
-    // HANDLE SERVER PACKETS
+    // HANDLE
     // =====================================
 
-    private void handle(String msg) {
+    private void handle(
+            String msg
+    ) {
 
-        if (msg.startsWith("PONG:")) {
+        System.out.println(
+                "SERVER: " + msg
+        );
 
-            String[] p = msg.split(":");
+        if (msg.startsWith("CONNECTED:")) {
 
-            long sentTime = Long.parseLong(p[1]);
-
-            ping = System.currentTimeMillis() - sentTime;
-
-            System.out.println("PING = " + ping + " ms");
+            playerId =
+                    msg.substring(
+                            "CONNECTED:".length()
+                    );
 
             return;
         }
 
-        // =====================================
-        // WORLD STATE
-        // =====================================
+        if (msg.startsWith("HELLO_OK:")) {
+
+            String[] p =
+                    msg.split(":");
+
+            if (p.length >= 3) {
+
+                playerId = p[1];
+
+                host =
+                        Boolean.parseBoolean(
+                                p[2]
+                        );
+            }
+
+            return;
+        }
+
+        if (msg.startsWith("PONG:")) {
+
+            String[] p =
+                    msg.split(":");
+
+            if (p.length >= 2) {
+
+                long sent =
+                        Long.parseLong(
+                                p[1]
+                        );
+
+                ping =
+                        System.currentTimeMillis()
+                                - sent;
+            }
+
+            return;
+        }
+
+        if (msg.startsWith("LOBBY_STATE")) {
+
+            String lobbyData =
+                    msg.substring(
+                            "LOBBY_STATE".length()
+                    );
+
+            lastLobbyState = lobbyData;
+
+            if (lobbyScene != null) {
+
+                Platform.runLater(() ->
+                        lobbyScene.updateLobby(
+                                lobbyData
+                        )
+                );
+            }
+
+            return;
+        }
+
+        if (msg.equals("GAME_START")) {
+
+            if (gameStartHandler != null) {
+
+                Platform.runLater(
+                        gameStartHandler
+                );
+            }
+
+            return;
+        }
+
         if (msg.startsWith("LOCATION:")) {
 
-            String json = msg.substring("LOCATION:".length());
+            String json =
+                    msg.substring(
+                            "LOCATION:".length()
+                    );
 
             LocationPacket packet =
-                    gson.fromJson(json, LocationPacket.class);
+                    gson.fromJson(
+                            json,
+                            LocationPacket.class
+                    );
 
             if (worldScene != null) {
 
@@ -187,14 +350,6 @@ public class NetworkClient {
                                 packet.location
                         )
                 );
-
-            } else {
-
-                System.out.println(
-                        "WORLD SCENE IS NULL -> SAVE LOCATION"
-                );
-
-                pendingLocation = packet.location;
             }
 
             return;
@@ -202,103 +357,66 @@ public class NetworkClient {
 
         if (msg.startsWith("WORLD_STATE")) {
 
-            WorldStatePacket packet =
-                    new WorldStatePacket();
+            handleWorldState(msg);
+        }
+    }
 
-            String[] p =
-                    msg.split(":");
+    private void handleWorldState(
+            String msg
+    ) {
 
-            for (int i = 1; i + 4 < p.length; i += 5) {
+        WorldStatePacket packet =
+                new WorldStatePacket();
 
-                String username =
-                        p[i];
+        String[] p =
+                msg.split(":");
 
-                float x =
-                        Float.parseFloat(
-                                p[i + 1]
-                        );
+        for (
+                int i = 1;
+                i + 4 < p.length;
+                i += 5
+        ) {
 
-                float y =
-                        Float.parseFloat(
-                                p[i + 2]
-                        );
+            String username = p[i];
 
-                int locationX =
-                        Integer.parseInt(
-                                p[i + 3]
-                        );
-
-                int locationY =
-                        Integer.parseInt(
-                                p[i + 4]
-                        );
-
-                PlayerState state =
-                        new PlayerState(
-                                username,
-                                x,
-                                y,
-                                locationX,
-                                locationY
-                        );
-
-                packet.players.add(state);
-            }
-
-            if (worldScene != null) {
-
-                Platform.runLater(() -> {
-
-                    worldScene.updateWorld(
-                            packet
+            float x =
+                    Float.parseFloat(
+                            p[i + 1]
                     );
-                });
-            }
 
-            return;
+            float y =
+                    Float.parseFloat(
+                            p[i + 2]
+                    );
+
+            int locationX =
+                    Integer.parseInt(
+                            p[i + 3]
+                    );
+
+            int locationY =
+                    Integer.parseInt(
+                            p[i + 4]
+                    );
+
+            packet.players.add(
+                    new PlayerState(
+                            username,
+                            x,
+                            y,
+                            locationX,
+                            locationY
+                    )
+            );
         }
 
-        // =====================================
-        // SIMPLE PACKETS
-        // =====================================
+        if (worldScene != null) {
 
-        switch (msg) {
-
-            case "LOGIN_SUCCESS":
-
-                if (loginSuccessHandler != null) {
-
-                    Platform.runLater(() -> {
-
-                        loginSuccessHandler.run();
-                    });
-                }
-
-                break;
-
-            case "TOKEN_OK":
-
-                if (tokenValidHandler != null) {
-
-                    Platform.runLater(() -> {
-
-                        tokenValidHandler.run();
-                    });
-                }
-
-                break;
-
-            case "TOKEN_FAIL":
-
-                if (tokenInvalidHandler != null) {
-
-                    Platform.runLater(() -> {
-
-                        tokenInvalidHandler.run();
-                    });
-                }
-
-                break;
+            Platform.runLater(() ->
+                    worldScene.updateWorld(
+                            packet
+                    )
+            );
         }
     }
 
@@ -306,13 +424,12 @@ public class NetworkClient {
     // SEND
     // =====================================
 
-    public void send(String message) {
+    public synchronized void send(
+            String message
+    ) {
 
-        if (out == null) {
-
-            System.out.println(
-                    "ERROR: not connected"
-            );
+        if (!connected
+                || out == null) {
 
             return;
         }
@@ -320,27 +437,88 @@ public class NetworkClient {
         out.println(message);
     }
 
+    // =====================================
+    // PING
+    // =====================================
+
     private void startPingLoop() {
 
-        Thread pingThread = new Thread(() -> {
+        pingThread =
+                new Thread(
+                        () -> {
 
-            while (true) {
+                            while (
+                                    connected
+                                            && !Thread.currentThread()
+                                            .isInterrupted()
+                            ) {
 
-                try {
+                                try {
 
-                    long now = System.currentTimeMillis();
+                                    long now =
+                                            System.currentTimeMillis();
 
-                    send("PING:" + now);
+                                    send(
+                                            "PING:" + now
+                                    );
 
-                    Thread.sleep(2000);
+                                    Thread.sleep(
+                                            2000
+                                    );
 
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
+                                } catch (
+                                        InterruptedException e
+                                ) {
+
+                                    Thread.currentThread()
+                                            .interrupt();
+
+                                    break;
+                                }
+                            }
+
+                        },
+                        "NetworkClient-Ping"
+                );
 
         pingThread.setDaemon(true);
+
         pingThread.start();
+    }
+
+    // =====================================
+    // SCENES
+    // =====================================
+
+    public void setLobbyScene(
+            LobbyScene lobbyScene
+    ) {
+
+        this.lobbyScene = lobbyScene;
+
+        if (lastLobbyState != null) {
+
+            Platform.runLater(() ->
+                    lobbyScene.updateLobby(
+                            lastLobbyState
+                    )
+            );
+        }
+    }
+
+    public void setWorldScene(
+            WorldScene worldScene
+    ) {
+
+        this.worldScene =
+                worldScene;
+    }
+
+    public void setGameStartHandler(
+            Runnable handler
+    ) {
+
+        this.gameStartHandler =
+                handler;
     }
 }

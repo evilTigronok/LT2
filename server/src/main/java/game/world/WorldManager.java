@@ -8,6 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import game.world.data.LocationData;
 import game.world.data.LocationIO;
 
+import game.data.GameData;
+
 import java.io.File;
 import java.util.HashMap;
 
@@ -30,7 +32,9 @@ public class WorldManager {
         try {
 
             File folder =
-                    new File("server/data/locations");
+                    GameData
+                            .resolve("locations")
+                            .toFile();
 
             System.out.println(
                     folder.getAbsolutePath()

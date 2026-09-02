@@ -1,194 +1,223 @@
 package game.server;
 
-import com.google.gson.Gson;
-import game.auth.AuthService;
-import game.auth.RegistrationHandler;
-import game.auth.TokenService;
-import game.network.packets.LocationPacket;
-import game.sessions.ClientSession;
-import game.world.ServerPlayer;
-import game.world.WorldManager;
-import game.world.data.LocationData;
-
 import java.io.*;
 import java.net.Socket;
+import java.util.UUID;
 
 public class ClientHandler implements Runnable {
 
     private final Socket socket;
+
     private final BufferedReader in;
+
     private final PrintWriter out;
 
-    private final RegistrationHandler registrationHandler;
-    private final TokenService tokenService;
-    private final AuthService authService;
-    private final WorldManager worldManager;
+    private final GameServer server;
 
-    private final ClientSession session = new ClientSession();
+    private final String playerId;
+
+    private String playerName;
+
+    private boolean host;
+
+    private volatile boolean connected = true;
 
     public ClientHandler(
             Socket socket,
-            RegistrationHandler registrationHandler,
-            TokenService tokenService,
-            AuthService authService,
-            WorldManager worldManager
+            GameServer server
     ) throws IOException {
 
         this.socket = socket;
-        this.registrationHandler = registrationHandler;
-        this.tokenService = tokenService;
-        this.authService = authService;
-        this.worldManager = worldManager;
+        this.server = server;
 
-        this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        this.out = new PrintWriter(socket.getOutputStream(), true);
+        this.in =
+                new BufferedReader(
+                        new InputStreamReader(
+                                socket.getInputStream()
+                        )
+                );
+
+        this.out =
+                new PrintWriter(
+                        socket.getOutputStream(),
+                        true
+                );
+
+        this.playerId =
+                UUID.randomUUID()
+                        .toString()
+                        .substring(0, 8);
     }
 
     @Override
     public void run() {
+
         try {
+
+            send(
+                    "CONNECTED:" + playerId
+            );
+
             String msg;
-            while ((msg = in.readLine()) != null) {
+
+            while (
+                    connected
+                            && (msg = in.readLine()) != null
+            ) {
+
                 handle(msg);
             }
+
         } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            if (session.getLogin() != null) {
-                worldManager.removePlayer(session.getLogin());
+
+            if (connected) {
+                System.out.println(
+                        "Client connection lost: "
+                                + playerId
+                );
             }
+
+        } finally {
+
+            disconnectInternal();
         }
     }
 
-    // =========================
-    // 🔥 ЕДИНЫЙ МЕТОД ОТПРАВКИ
-    // =========================
-    public void send(String message) {
-        if (out != null) {
-            out.println(message);
-        }
-    }
-
-    public void sendLocation(LocationData location) {
-
-        LocationPacket packet = new LocationPacket();
-        packet.location = location;
-
-        String json = new Gson().toJson(packet);
-
-        System.out.println("SEND JSON = " + json);
-
-        send("LOCATION:" + json);
-    }
-
-    public String getUsernameSafe() {
-        return session.getLogin();
-    }
-
-    // =========================
-    // HANDLE
-    // =========================
     private void handle(String msg) {
 
-        String[] p = msg.split(":");
-        if (p.length == 0) return;
+        if (msg == null || msg.isEmpty()) {
+            return;
+        }
 
-        switch (p[0]) {
+        String[] parts =
+                msg.split(":");
 
-            case "INPUT":
-                handleInput(p);
-                break;
+        switch (parts[0]) {
 
-            case "LOGIN":
-                handleLogin(p);
-                break;
+            case "HELLO":
 
-            case "REGISTER":
-                handleRegister(p);
+                handleHello(parts);
+
                 break;
 
             case "PING":
-                send("PONG:" + p[1]);
+
+                if (parts.length >= 2) {
+
+                    send(
+                            "PONG:"
+                                    + parts[1]
+                    );
+                }
+
                 break;
-        }
-    }
 
-    private void handleInput(String[] p) {
+            case "READY":
 
-        if (session.getLogin() == null) return;
-        if (p.length < 5) return;
-
-        ServerPlayer player = worldManager.getPlayer(session.getLogin());
-        if (player == null) return;
-
-        player.setUp(Boolean.parseBoolean(p[1]));
-        player.setDown(Boolean.parseBoolean(p[2]));
-        player.setLeft(Boolean.parseBoolean(p[3]));
-        player.setRight(Boolean.parseBoolean(p[4]));
-    }
-
-    private void handleLogin(String[] p) {
-
-        if (p.length < 3) {
-            out.println("LOGIN_FAIL");
-            return;
-        }
-
-        String login = p[1];
-        String password = p[2];
-
-        boolean ok =
-                registrationHandler.authenticate(
-                        login,
-                        password
+                send(
+                        "READY_STATE:"
+                                + playerId
                 );
 
-        if (!ok) {
-            out.println("LOGIN_FAIL");
-            return;
-        }
+                break;
 
-        // если игрок уже есть на сервере
-        worldManager.removePlayer(login);
+            case "START_GAME":
 
-        session.setLogin(login);
+                if (host) {
 
-        worldManager.addPlayer(login);
+                    server.broadcast(
+                            "GAME_START"
+                    );
+                }
 
-        out.println("LOGIN_SUCCESS");
+                break;
 
-        ServerPlayer player =
-                worldManager.getPlayer(login);
+            default:
 
-        if (player != null) {
-
-            LocationData location =
-                    worldManager.getPlayerLocation(player);
-
-            System.out.println(
-                    "FORCE SEND LOCATION TO " + login
-            );
-
-            LocationPacket packet =
-                    new LocationPacket();
-
-            packet.location = location;
-
-            sendLocation(location);
+                System.out.println(
+                        "Unknown packet: "
+                                + msg
+                );
         }
     }
 
-    private void handleRegister(String[] p) {
+    private void handleHello(
+            String[] parts
+    ) {
 
-        if (p.length < 6) {
-            send("REGISTER_FAIL");
+        if (parts.length < 3) {
             return;
         }
 
-        boolean ok = registrationHandler.register(
-                p[1], p[2], p[3], p[4], p[5], false
+        host =
+                "HOST".equals(
+                        parts[1]
+                );
+
+        playerName =
+                parts[2];
+
+        if (playerName == null
+                || playerName.isBlank()) {
+
+            playerName =
+                    "Player-" + playerId;
+        }
+
+        send(
+                "HELLO_OK:"
+                        + playerId
+                        + ":"
+                        + host
         );
 
-        send(ok ? "REGISTER_OK" : "REGISTER_FAIL");
+        server.broadcastLobbyState();
+    }
+
+    public void send(String message) {
+
+        if (!connected) {
+            return;
+        }
+
+        out.println(message);
+    }
+
+    public void disconnect() {
+
+        disconnectInternal();
+    }
+
+    private synchronized void disconnectInternal() {
+
+        if (!connected) {
+            return;
+        }
+
+        connected = false;
+
+        server.removeClient(this);
+
+        try {
+            socket.close();
+        } catch (IOException ignored) {
+        }
+
+        System.out.println(
+                "Client disconnected: "
+                        + playerId
+        );
+    }
+
+    public String getPlayerId() {
+        return playerId;
+    }
+
+    public String getPlayerName() {
+        return playerName;
+    }
+
+    public boolean isHost() {
+        return host;
     }
 }

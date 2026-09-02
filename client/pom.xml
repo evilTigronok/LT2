@@ -31,6 +31,12 @@
         </dependency>
 
         <dependency>
+            <groupId>game</groupId>
+            <artifactId>server</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
             <version>${javafx.version}</version>
@@ -73,48 +79,53 @@
 
             <!-- ✅ FIX: shaded JAR + ресурсы + exe-friendly -->
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.0</version>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-shade-plugin</artifactId>
+            <version>3.5.0</version>
 
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
+            <executions>
+                <execution>
+                    <phase>package</phase>
 
-                        <configuration>
+                    <goals>
+                        <goal>shade</goal>
+                    </goals>
 
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                    <configuration>
 
-                            <!-- важно для exe -->
-                            <finalName>client-all</finalName>
+                        <createDependencyReducedPom>false</createDependencyReducedPom>
 
-                            <transformers>
+                        <finalName>LT2</finalName>
 
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>game.client.ClientMain</mainClass>
-                                </transformer>
+                        <shadedArtifactAttached>false</shadedArtifactAttached>
 
-                            </transformers>
+                        <transformers>
 
-                            <!-- 🔥 страховка от мусора/конфликтов -->
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
-                                    <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
-                                    </excludes>
-                                </filter>
-                            </filters>
+                            <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                <mainClass>game.client.ClientMain</mainClass>
+                            </transformer>
 
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
+                        </transformers>
+
+                        <filters>
+
+                            <filter>
+                                <artifact>*:*</artifact>
+
+                                <excludes>
+                                    <exclude>META-INF/*.SF</exclude>
+                                    <exclude>META-INF/*.DSA</exclude>
+                                    <exclude>META-INF/*.RSA</exclude>
+                                </excludes>
+
+                            </filter>
+
+                        </filters>
+
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
 
         </plugins>
     </build>

@@ -346,40 +346,6 @@ public class WorldScene {
 
     // ---------------- WORLD ----------------
 
-    private void loadLocationByCoords(int x, int y) {
-
-
-        try {
-            File file = new File("server/data/locations/" + x + "_" + y + ".json");
-
-            System.out.println(
-                    file.getAbsolutePath()
-            );
-            System.out.println(
-                    "TRY LOAD "
-                            + x + "_" + y
-            );
-            System.out.println(
-                    "EXISTS = "
-                            + file.exists()
-            );
-
-            objects.clear();
-
-            if (!file.exists()) {
-                return;
-            }
-
-            Gson gson = new Gson();
-            LocationData data = gson.fromJson(new FileReader(file), LocationData.class);
-
-            loadLocation(data);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     public void loadLocation(LocationData data) {
         System.out.println(
                 "LOAD LOCATION CALLED"
