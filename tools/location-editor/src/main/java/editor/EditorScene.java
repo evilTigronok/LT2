@@ -2,45 +2,54 @@ package editor;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import game.world.LocationObject;
-import game.world.LocationObjectType;
-import game.world.data.LocationData;
+import editor.assets.AssetLoader;
 import game.world.data.PlacedObjectData;
+import game.world.data.WorldData;
+import game.world.data.WorldIO;
 import game.world.objects.ObjectDefinition;
 import game.world.objects.ObjectRegistry;
-
-import editor.assets.AssetLoader;
-import javafx.scene.image.Image;
-
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-
 import javafx.scene.Parent;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-
 import javafx.scene.control.*;
-
+import javafx.scene.image.Image;
 import javafx.scene.input.MouseButton;
-
-import javafx.scene.layout.*;
-
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-
 import java.util.ArrayList;
 import java.util.List;
 
 public class EditorScene {
 
+    private static final int DEFAULT_WORLD_WIDTH =
+            10000;
+
+    private static final int DEFAULT_WORLD_HEIGHT =
+            10000;
+
+    private static final double MIN_ZOOM =
+            0.1;
+
+    private static final double MAX_ZOOM =
+            4.0;
+
     private final BorderPane root =
             new BorderPane();
 
     private final Canvas canvas =
-            new Canvas(1920, 1080);
+            new Canvas(
+                    1200,
+                    800
+            );
 
     private final GraphicsContext g =
             canvas.getGraphicsContext2D();
@@ -48,14 +57,26 @@ public class EditorScene {
     private final ObjectRegistry registry =
             new ObjectRegistry();
 
-    private final List<ObjectPosition> objectPositions =
+    private final List<ObjectPosition> objects =
             new ArrayList<>();
 
     private final ListView<ObjectDefinition> objectList =
             new ListView<>();
 
-    private final TextField locationNameField =
-            new TextField();
+    private final Label coordinatesLabel =
+            new Label(
+                    "X: 0  Y: 0"
+            );
+
+    private final Label zoomLabel =
+            new Label(
+                    "Zoom: 100%"
+            );
+
+    private final TextField worldFileField =
+            new TextField(
+                    "world.json"
+            );
 
     private final ComboBox<String> biomeBox =
             new ComboBox<>();
@@ -69,13 +90,32 @@ public class EditorScene {
     private final CheckBox fogCheck =
             new CheckBox("Fog");
 
-    private final Spinner<Integer> worldXSpinner =
-            new Spinner<>(-999, 999, 0);
-
-    private final Spinner<Integer> worldYSpinner =
-            new Spinner<>(-999, 999, 0);
-
     private ObjectDefinition selectedDefinition;
+
+    private int worldWidth =
+            DEFAULT_WORLD_WIDTH;
+
+    private int worldHeight =
+            DEFAULT_WORLD_HEIGHT;
+
+    /**
+     * Камера в мировых координатах.
+     */
+    private double cameraX =
+            DEFAULT_WORLD_WIDTH / 2.0;
+
+    private double cameraY =
+            DEFAULT_WORLD_HEIGHT / 2.0;
+
+    /**
+     * Масштаб редактора.
+     */
+    private double zoom = 0.25;
+
+    private boolean panning;
+
+    private double lastMouseX;
+    private double lastMouseY;
 
     public EditorScene() {
 
@@ -100,42 +140,40 @@ public class EditorScene {
                 -fx-background-color: #1e1e1e;
                 """);
 
-        VBox leftPanel =
-                createLeftPanel();
+        root.setLeft(
+                createLeftPanel()
+        );
 
-        StackPane center =
-                createCenter();
+        root.setCenter(
+                createCenter()
+        );
 
-        root.setLeft(leftPanel);
-        root.setCenter(center);
+        root.setBottom(
+                createBottomBar()
+        );
     }
 
     private VBox createLeftPanel() {
 
-        VBox panel = new VBox(12);
-
-        Label posLabel =
-                createLabel("World Position");
+        VBox panel =
+                new VBox(10);
 
         panel.setPadding(
                 new Insets(15)
         );
 
-        panel.setPrefWidth(320);
-
-        panel.getChildren().addAll(
-                posLabel,
-                worldXSpinner,
-                worldYSpinner
+        panel.setPrefWidth(
+                320
         );
 
         panel.setStyle("""
                 -fx-background-color: #2a2a2a;
                 """);
 
-        Label title = new Label(
-                "LOCATION EDITOR"
-        );
+        Label title =
+                new Label(
+                        "WORLD EDITOR"
+                );
 
         title.setStyle("""
                 -fx-font-size: 24px;
@@ -143,13 +181,23 @@ public class EditorScene {
                 -fx-text-fill: white;
                 """);
 
-        Label locationLabel =
-                createLabel("Location Name");
+        Label worldLabel =
+                createLabel(
+                        "World"
+                );
 
-        styleTextField(locationNameField);
+        Label sizeLabel =
+                createLabel(
+                        "Size: "
+                                + worldWidth
+                                + " × "
+                                + worldHeight
+                );
 
         Label biomeLabel =
-                createLabel("Biome");
+                createLabel(
+                        "Biome"
+                );
 
         biomeBox.getItems().addAll(
                 "Forest",
@@ -161,99 +209,140 @@ public class EditorScene {
         biomeBox.getSelectionModel()
                 .selectFirst();
 
-        styleComboBox(biomeBox);
+        styleComboBox(
+                biomeBox
+        );
 
         Label weatherLabel =
-                createLabel("Weather");
+                createLabel(
+                        "Weather"
+                );
 
-        styleCheckBox(rainCheck);
-        styleCheckBox(snowCheck);
-        styleCheckBox(fogCheck);
+        styleCheckBox(
+                rainCheck
+        );
+
+        styleCheckBox(
+                snowCheck
+        );
+
+        styleCheckBox(
+                fogCheck
+        );
 
         Label objectsLabel =
-                createLabel("Objects");
+                createLabel(
+                        "Objects"
+                );
 
-        objectList.setPrefHeight(400);
+        objectList.setPrefHeight(
+                420
+        );
 
         objectList.setStyle("""
                 -fx-control-inner-background: #2a2a2a;
                 -fx-background-color: #2a2a2a;
                 """);
 
-        objectList.setCellFactory(param -> new ListCell<>() {
+        objectList.setCellFactory(
+                param ->
+                        new ListCell<>() {
 
-            @Override
-            protected void updateItem(
-                    ObjectDefinition item,
-                    boolean empty
-            ) {
+                            @Override
+                            protected void updateItem(
+                                    ObjectDefinition item,
+                                    boolean empty
+                            ) {
 
-                super.updateItem(item, empty);
+                                super.updateItem(
+                                        item,
+                                        empty
+                                );
 
-                if (empty || item == null) {
+                                if (
+                                        empty
+                                                || item == null
+                                ) {
 
-                    setText(null);
-                    return;
-                }
+                                    setText(
+                                            null
+                                    );
 
-                setText(
-                        item.getName()
-                                + " [" +
-                                item.getType()
-                                + "]"
-                );
+                                    return;
+                                }
 
-                setTextFill(Color.WHITE);
+                                setText(
+                                        item.getName()
+                                                + " ["
+                                                + item.getType()
+                                                + "]"
+                                );
 
-                setStyle("""
-                        -fx-background-color: #2a2a2a;
-                        """);
-            }
-        });
+                                setTextFill(
+                                        Color.WHITE
+                                );
 
-        objectList.getItems().addAll(
-                registry.getAll()
+                                setStyle("""
+                                        -fx-background-color: #2a2a2a;
+                                        """);
+                            }
+                        }
         );
 
         objectList.getSelectionModel()
                 .selectedItemProperty()
-                .addListener((obs, oldV, newV) -> {
-                    selectedDefinition = newV;
-                });
+                .addListener(
+                        (obs, oldValue, newValue) ->
+                                selectedDefinition =
+                                        newValue
+                );
+
+        Button newButton =
+                new Button(
+                        "New World"
+                );
+
+        Button openButton =
+                new Button(
+                        "Open World"
+                );
 
         Button saveButton =
-                new Button("Save");
+                new Button(
+                        "Save World"
+                );
 
-        styleButton(saveButton);
+        styleButton(
+                newButton
+        );
 
-        saveButton.setOnAction(e -> {
-            saveLocation();
-        });
+        styleButton(
+                openButton
+        );
 
-        Button loadButton =
-                new Button("Open");
+        styleButton(
+                saveButton
+        );
 
-        styleButton(loadButton);
+        newButton.setOnAction(
+                e -> newWorld()
+        );
 
-        loadButton.setOnAction(e -> {
+        openButton.setOnAction(
+                e -> openWorld()
+        );
 
-            File file =
-                    new File(
-                            "../../server/data/locations/"
-                                    + locationNameField.getText()
-                                    + ".json"
-                    );
-
-            if (file.exists()) {
-                loadLocation(file);
-            }
-        });
+        saveButton.setOnAction(
+                e -> saveWorld()
+        );
 
         panel.getChildren().addAll(
                 title,
 
-                locationLabel,
-                locationNameField,
+                worldLabel,
+                sizeLabel,
+
+                new Separator(),
 
                 biomeLabel,
                 biomeBox,
@@ -263,11 +352,14 @@ public class EditorScene {
                 snowCheck,
                 fogCheck,
 
+                new Separator(),
+
                 objectsLabel,
                 objectList,
 
-                saveButton,
-                loadButton
+                newButton,
+                openButton,
+                saveButton
         );
 
         return panel;
@@ -278,129 +370,473 @@ public class EditorScene {
         StackPane pane =
                 new StackPane();
 
-        pane.setPadding(
-                new Insets(15)
+        pane.setAlignment(
+                Pos.CENTER
         );
 
-        pane.setAlignment(Pos.CENTER);
+        canvas.widthProperty()
+                .bind(
+                        pane.widthProperty()
+                );
 
-        canvas.setOnMouseClicked(e -> {
+        canvas.heightProperty()
+                .bind(
+                        pane.heightProperty()
+                );
 
-            int x = (int) e.getX();
-            int y = (int) e.getY();
+        canvas.setOnMousePressed(
+                this::mousePressed
+        );
 
-            // удалить объект
-            if (e.getButton() == MouseButton.SECONDARY) {
+        canvas.setOnMouseDragged(
+                this::mouseDragged
+        );
 
-                removeObjectAt(x, y);
+        canvas.setOnMouseReleased(
+                e -> panning = false
+        );
 
-                render();
+        canvas.setOnMouseClicked(
+                this::mouseClicked
+        );
 
-                return;
-            }
+        canvas.setOnScroll(
+                this::mouseScrolled
+        );
 
-            // поставить объект
-            if (selectedDefinition == null) {
-                return;
-            }
-
-            LocationObject object =
-                    new LocationObject(
-                            selectedDefinition.getId(),
-                            selectedDefinition.getName(),
-                            null
-                    );
-
-            int objectX =
-                    x - selectedDefinition.getWidth() / 2;
-
-            int objectY =
-                    y - selectedDefinition.getHeight() / 2;
-
-            objectPositions.add(
-                    new ObjectPosition(
-                            object,
-                            objectX,
-                            objectY
-                    )
-            );
-
-            render();
-        });
-
-        pane.getChildren().add(canvas);
+        pane.getChildren().add(
+                canvas
+        );
 
         return pane;
     }
 
-    // =====================================================
-    // OBJECT POSITION
-    // =====================================================
+    private HBox createBottomBar() {
 
-    private static class ObjectPosition {
+        HBox bar =
+                new HBox(30);
 
-        private final LocationObject object;
+        bar.setPadding(
+                new Insets(8)
+        );
 
-        private final int x;
+        bar.setStyle("""
+                -fx-background-color: #252525;
+                """);
 
-        private final int y;
+        coordinatesLabel.setTextFill(
+                Color.WHITE
+        );
 
-        public ObjectPosition(
-                LocationObject object,
-                int x,
-                int y
-        ) {
+        zoomLabel.setTextFill(
+                Color.WHITE
+        );
 
-            this.object = object;
-            this.x = x;
-            this.y = y;
-        }
+        Label help =
+                new Label(
+                        "LMB: place | RMB: delete | " +
+                                "MMB: pan | Wheel: zoom"
+                );
+
+        help.setTextFill(
+                Color.LIGHTGRAY
+        );
+
+        bar.getChildren().addAll(
+                coordinatesLabel,
+                zoomLabel,
+                help
+        );
+
+        return bar;
     }
 
     // =====================================================
-    // REMOVE
+    // MOUSE
     // =====================================================
 
+    private void mousePressed(
+            MouseEvent event
+    ) {
+
+        if (
+                event.getButton()
+                        == MouseButton.MIDDLE
+        ) {
+
+            panning = true;
+
+            lastMouseX =
+                    event.getX();
+
+            lastMouseY =
+                    event.getY();
+        }
+    }
+
+    private void mouseDragged(
+            MouseEvent event
+    ) {
+
+        if (!panning) {
+            return;
+        }
+
+        double dx =
+                event.getX()
+                        - lastMouseX;
+
+        double dy =
+                event.getY()
+                        - lastMouseY;
+
+        cameraX -=
+                dx / zoom;
+
+        cameraY -=
+                dy / zoom;
+
+        clampCamera();
+
+        lastMouseX =
+                event.getX();
+
+        lastMouseY =
+                event.getY();
+
+        render();
+    }
+
+    private void mouseClicked(
+            MouseEvent event
+    ) {
+
+        if (
+                event.getButton()
+                        == MouseButton.MIDDLE
+        ) {
+            return;
+        }
+
+        double worldX =
+                screenToWorldX(
+                        event.getX()
+                );
+
+        double worldY =
+                screenToWorldY(
+                        event.getY()
+                );
+
+        updateCoordinates(
+                worldX,
+                worldY
+        );
+
+        if (
+                event.getButton()
+                        == MouseButton.SECONDARY
+        ) {
+
+            removeObjectAt(
+                    worldX,
+                    worldY
+            );
+
+            render();
+
+            return;
+        }
+
+        if (
+                event.getButton()
+                        != MouseButton.PRIMARY
+        ) {
+            return;
+        }
+
+        if (
+                selectedDefinition == null
+        ) {
+            return;
+        }
+
+        int objectX =
+                (int) worldX
+                        - selectedDefinition.getWidth()
+                        / 2;
+
+        int objectY =
+                (int) worldY
+                        - selectedDefinition.getHeight()
+                        / 2;
+
+        /*
+         * Не разрешаем ставить объект
+         * за пределы мира.
+         */
+        if (
+                objectX < 0
+                        ||
+                        objectY < 0
+                        ||
+                        objectX
+                                + selectedDefinition.getWidth()
+                                > worldWidth
+                        ||
+                        objectY
+                                + selectedDefinition.getHeight()
+                                > worldHeight
+        ) {
+            return;
+        }
+
+        objects.add(
+                new ObjectPosition(
+                        selectedDefinition.getId(),
+                        objectX,
+                        objectY
+                )
+        );
+
+        render();
+    }
+
+    private void mouseScrolled(
+            ScrollEvent event
+    ) {
+
+        double oldZoom =
+                zoom;
+
+        if (event.getDeltaY() > 0) {
+            zoom *= 1.1;
+        } else {
+            zoom /= 1.1;
+        }
+
+        zoom =
+                Math.max(
+                        MIN_ZOOM,
+                        Math.min(
+                                MAX_ZOOM,
+                                zoom
+                        )
+                );
+
+        /*
+         * Сохраняем мировую точку
+         * под курсором на том же месте.
+         */
+        double mouseWorldX =
+                screenToWorldX(
+                        event.getX(),
+                        oldZoom
+                );
+
+        double mouseWorldY =
+                screenToWorldY(
+                        event.getY(),
+                        oldZoom
+                );
+
+        double newMouseWorldX =
+                screenToWorldX(
+                        event.getX()
+                );
+
+        double newMouseWorldY =
+                screenToWorldY(
+                        event.getY()
+                );
+
+        cameraX +=
+                mouseWorldX
+                        - newMouseWorldX;
+
+        cameraY +=
+                mouseWorldY
+                        - newMouseWorldY;
+
+        clampCamera();
+
+        zoomLabel.setText(
+                "Zoom: "
+                        + (int) (zoom * 100)
+                        + "%"
+        );
+
+        render();
+    }
+
+    // =====================================================
+    // COORDINATES
+    // =====================================================
+
+    private double screenToWorldX(
+            double screenX
+    ) {
+
+        return screenToWorldX(
+                screenX,
+                zoom
+        );
+    }
+
+    private double screenToWorldX(
+            double screenX,
+            double usedZoom
+    ) {
+
+        return cameraX
+                + (
+                screenX
+                        - canvas.getWidth() / 2
+        ) / usedZoom;
+    }
+
+    private double screenToWorldY(
+            double screenY
+    ) {
+
+        return screenToWorldY(
+                screenY,
+                zoom
+        );
+    }
+
+    private double screenToWorldY(
+            double screenY,
+            double usedZoom
+    ) {
+
+        return cameraY
+                + (
+                screenY
+                        - canvas.getHeight() / 2
+        ) / usedZoom;
+    }
+
+    private void updateCoordinates(
+            double x,
+            double y
+    ) {
+
+        coordinatesLabel.setText(
+                "X: "
+                        + (int) x
+                        + "    Y: "
+                        + (int) y
+        );
+    }
+
+    // =====================================================
+    // CAMERA
+    // =====================================================
+
+    private void clampCamera() {
+
+        double visibleWidth =
+                canvas.getWidth()
+                        / zoom;
+
+        double visibleHeight =
+                canvas.getHeight()
+                        / zoom;
+
+        double halfWidth =
+                visibleWidth / 2;
+
+        double halfHeight =
+                visibleHeight / 2;
+
+        cameraX =
+                Math.max(
+                        halfWidth,
+                        Math.min(
+                                worldWidth
+                                        - halfWidth,
+                                cameraX
+                        )
+                );
+
+        cameraY =
+                Math.max(
+                        halfHeight,
+                        Math.min(
+                                worldHeight
+                                        - halfHeight,
+                                cameraY
+                        )
+                );
+    }
+
+    // =====================================================
+    // OBJECTS
+    // =====================================================
+
+    private void loadObjects() {
+
+        registry.load(
+                "../../server/data/objects"
+        );
+
+        objectList.getItems().setAll(
+                registry.getAll()
+        );
+    }
+
     private void removeObjectAt(
-            int mouseX,
-            int mouseY
+            double mouseX,
+            double mouseY
     ) {
 
         ObjectPosition found = null;
 
-        for (ObjectPosition pos : objectPositions) {
+        /*
+         * Идём с конца, чтобы при перекрытии
+         * удалялся верхний объект.
+         */
+        for (
+                int i = objects.size() - 1;
+                i >= 0;
+                i--
+        ) {
+
+            ObjectPosition object =
+                    objects.get(i);
 
             ObjectDefinition definition =
                     registry.getById(
-                            pos.object.id
+                            object.objectId
                     );
 
             if (definition == null) {
                 continue;
             }
 
-            int width =
-                    definition.getWidth();
-
-            int height =
-                    definition.getHeight();
-
             if (
-                    mouseX >= pos.x
-                            && mouseX <= pos.x + width
-                            && mouseY >= pos.y
-                            && mouseY <= pos.y + height
+                    mouseX >= object.x
+                            &&
+                            mouseX <=
+                                    object.x
+                                            + definition.getWidth()
+                            &&
+                            mouseY >= object.y
+                            &&
+                            mouseY <=
+                                    object.y
+                                            + definition.getHeight()
             ) {
 
-                found = pos;
+                found = object;
 
                 break;
             }
         }
 
         if (found != null) {
-
-            objectPositions.remove(found);
+            objects.remove(found);
         }
     }
 
@@ -410,281 +846,548 @@ public class EditorScene {
 
     private void render() {
 
+        double width =
+                canvas.getWidth();
+
+        double height =
+                canvas.getHeight();
+
         g.setFill(
-                Color.web("#5d8a52")
+                Color.web("#151515")
         );
 
         g.fillRect(
                 0,
                 0,
-                canvas.getWidth(),
+                width,
+                height
+        );
+
+        g.save();
+
+        /*
+         * Камера.
+         */
+        g.translate(
+                width / 2,
+                height / 2
+        );
+
+        g.scale(
+                zoom,
+                zoom
+        );
+
+        g.translate(
+                -cameraX,
+                -cameraY
+        );
+
+        renderTerrain();
+        renderGrid();
+        renderObjects();
+        renderBorder();
+
+        g.restore();
+    }
+
+    private void renderTerrain() {
+
+        g.setFill(
+                Color.web("#5d8a52")
+        );
+
+        double visibleWidth =
+                canvas.getWidth()
+                        / zoom;
+
+        double visibleHeight =
                 canvas.getHeight()
-        );
+                        / zoom;
 
-        // сетка
+        double left =
+                Math.max(
+                        0,
+                        cameraX
+                                - visibleWidth / 2
+                );
+
+        double top =
+                Math.max(
+                        0,
+                        cameraY
+                                - visibleHeight / 2
+                );
+
+        double right =
+                Math.min(
+                        worldWidth,
+                        cameraX
+                                + visibleWidth / 2
+                );
+
+        double bottom =
+                Math.min(
+                        worldHeight,
+                        cameraY
+                                + visibleHeight / 2
+                );
+
+        g.fillRect(
+                left,
+                top,
+                right - left,
+                bottom - top
+        );
+    }
+
+    private void renderGrid() {
+
+        double visibleWidth =
+                canvas.getWidth()
+                        / zoom;
+
+        double visibleHeight =
+                canvas.getHeight()
+                        / zoom;
+
+        double left =
+                Math.max(
+                        0,
+                        cameraX
+                                - visibleWidth / 2
+                );
+
+        double top =
+                Math.max(
+                        0,
+                        cameraY
+                                - visibleHeight / 2
+                );
+
+        double right =
+                Math.min(
+                        worldWidth,
+                        cameraX
+                                + visibleWidth / 2
+                );
+
+        double bottom =
+                Math.min(
+                        worldHeight,
+                        cameraY
+                                + visibleHeight / 2
+                );
+
+        int gridSize =
+                zoom >= 0.5
+                        ? 100
+                        : 500;
+
         g.setStroke(
-                Color.rgb(255,255,255,0.08)
+                Color.rgb(
+                        255,
+                        255,
+                        255,
+                        0.08
+                )
         );
 
-        for (int x = 0; x < 1920; x += 64) {
+        int startX =
+                ((int) left / gridSize)
+                        * gridSize;
+
+        int startY =
+                ((int) top / gridSize)
+                        * gridSize;
+
+        for (
+                int x = startX;
+                x <= right;
+                x += gridSize
+        ) {
 
             g.strokeLine(
                     x,
-                    0,
+                    top,
                     x,
-                    1080
+                    bottom
             );
         }
 
-        for (int y = 0; y < 1080; y += 64) {
+        for (
+                int y = startY;
+                y <= bottom;
+                y += gridSize
+        ) {
 
             g.strokeLine(
-                    0,
+                    left,
                     y,
-                    1920,
+                    right,
                     y
             );
         }
-
-        for (ObjectPosition pos : objectPositions) {
-
-            drawObject(pos);
-        }
     }
 
-    private void drawObject(
-            ObjectPosition pos
-    ) {
+    private void renderObjects() {
 
-        ObjectDefinition definition =
-                registry.getById(
-                        pos.object.id
-                );
+        for (ObjectPosition position :
+                objects) {
 
-        if (definition == null) {
-            return;
-        }
+            ObjectDefinition definition =
+                    registry.getById(
+                            position.objectId
+                    );
 
-        if (definition.getTexture() != null) {
+            if (definition == null) {
+                continue;
+            }
 
             Image image =
-                    AssetLoader.load(
-                            definition.getTexture()
-                    );
+                    null;
+
+            if (
+                    definition.getTexture()
+                            != null
+            ) {
+
+                image =
+                        AssetLoader.load(
+                                definition.getTexture()
+                        );
+            }
 
             if (image != null) {
 
                 g.drawImage(
                         image,
-                        pos.x,
-                        pos.y,
+                        position.x,
+                        position.y,
                         definition.getWidth(),
                         definition.getHeight()
                 );
 
-                return;
+            } else {
+
+                g.setFill(
+                        Color.YELLOW
+                );
+
+                g.fillRect(
+                        position.x,
+                        position.y,
+                        definition.getWidth(),
+                        definition.getHeight()
+                );
             }
         }
+    }
 
-        g.setFill(Color.YELLOW);
+    private void renderBorder() {
 
-        g.fillRect(
-                pos.x,
-                pos.y,
-                40,
-                40
+        g.setStroke(
+                Color.WHITE
+        );
+
+        g.setLineWidth(
+                4 / zoom
+        );
+
+        g.strokeRect(
+                0,
+                0,
+                worldWidth,
+                worldHeight
         );
     }
 
     // =====================================================
-    // OBJECTS
+    // SAVE
     // =====================================================
 
-    private void loadObjects() {
-
-        registry.load("../../server/data/objects");
-
-        objectList.getItems().setAll(
-                registry.getAll()
-        );
-    }
-
-    // =====================================================
-    // SAVE / LOAD
-    // =====================================================
-
-    private void saveLocation() {
+    private void saveWorld() {
 
         try {
 
-            File dir =
-                    new File(
-                            "../../server/data/locations"
+            WorldData world =
+                    new WorldData(
+                            worldWidth,
+                            worldHeight
                     );
 
-            if (!dir.exists()) {
-                dir.mkdirs();
-            }
-
-            LocationData data =
-                    new LocationData();
-
-            data.id =
-                    locationNameField.getText();
-
-            data.biome =
+            world.biome =
                     biomeBox.getValue();
 
-            data.rain =
+            world.rain =
                     rainCheck.isSelected();
 
-            data.snow =
+            world.snow =
                     snowCheck.isSelected();
 
-            data.fog =
+            world.fog =
                     fogCheck.isSelected();
 
-            data.worldX =
-                    worldXSpinner.getValue();
+            for (
+                    ObjectPosition position :
+                    objects
+            ) {
 
-            data.worldY =
-                    worldYSpinner.getValue();
-
-            for (ObjectPosition pos : objectPositions) {
-
-                PlacedObjectData obj =
-                        new PlacedObjectData();
-
-                obj.objectId =
-                        pos.object.id;
-
-                obj.x = pos.x;
-                obj.y = pos.y;
-
-                data.objects.add(obj);
-            }
-
-            Gson gson =
-                    new GsonBuilder()
-                            .setPrettyPrinting()
-                            .create();
-
-            File file =
-                    new File(
-                            dir,
-                            data.id + ".json"
-                    );
-
-            FileWriter writer =
-                    new FileWriter(file);
-
-            gson.toJson(
-                    data,
-                    writer
-            );
-
-            writer.close();
-
-            Alert alert =
-                    new Alert(
-                            Alert.AlertType.INFORMATION
-                    );
-
-            alert.setHeaderText(null);
-
-            alert.setContentText(
-                    "Location saved"
-            );
-
-            alert.show();
-
-        } catch (Exception e) {
-
-            e.printStackTrace();
-        }
-    }
-
-    private void loadLocation(File file) {
-
-        try {
-
-            Gson gson =
-                    new Gson();
-
-            FileReader reader =
-                    new FileReader(file);
-
-            LocationData data =
-                    gson.fromJson(
-                            reader,
-                            LocationData.class
-                    );
-
-            reader.close();
-
-            objectPositions.clear();
-
-            locationNameField.setText(
-                    data.id
-            );
-
-            biomeBox.setValue(
-                    data.biome
-            );
-
-            rainCheck.setSelected(
-                    data.rain
-            );
-
-            snowCheck.setSelected(
-                    data.snow
-            );
-
-            fogCheck.setSelected(
-                    data.fog
-            );
-
-            worldXSpinner.getValueFactory()
-                    .setValue(data.worldX);
-
-            worldYSpinner.getValueFactory()
-                    .setValue(data.worldY);
-
-            for (PlacedObjectData obj
-                    : data.objects) {
-
-                LocationObject object =
-                        new LocationObject(
-                                obj.objectId,
-                                obj.objectId,
-                                null
-                        );
-
-                objectPositions.add(
-                        new ObjectPosition(
-                                object,
-                                obj.x,
-                                obj.y
+                world.objects.add(
+                        new PlacedObjectData(
+                                position.objectId,
+                                position.x,
+                                position.y
                         )
                 );
             }
 
-            render();
+            File file =
+                    new File(
+                            "../../server/data/world",
+                            worldFileField.getText()
+                    );
+
+            WorldIO.save(
+                    world,
+                    file
+            );
+
+            showMessage(
+                    "World saved:\n"
+                            + file.getAbsolutePath()
+            );
 
         } catch (Exception e) {
 
             e.printStackTrace();
+
+            showError(
+                    "Cannot save world:\n"
+                            + e.getMessage()
+            );
         }
+    }
+
+    // =====================================================
+    // OPEN
+    // =====================================================
+
+    private void openWorld() {
+
+        try {
+
+            File file =
+                    new File(
+                            "../../server/data/world",
+                            worldFileField.getText()
+                    );
+
+            if (!file.exists()) {
+
+                showError(
+                        "World file not found:\n"
+                                + file.getAbsolutePath()
+                );
+
+                return;
+            }
+
+            WorldData world =
+                    WorldIO.load(
+                            file
+                    );
+
+            worldWidth =
+                    world.width;
+
+            worldHeight =
+                    world.height;
+
+            objects.clear();
+
+            for (
+                    PlacedObjectData object :
+                    world.objects
+            ) {
+
+                objects.add(
+                        new ObjectPosition(
+                                object.objectId,
+                                object.x,
+                                object.y
+                        )
+                );
+            }
+
+            biomeBox.setValue(
+                    world.biome
+            );
+
+            rainCheck.setSelected(
+                    world.rain
+            );
+
+            snowCheck.setSelected(
+                    world.snow
+            );
+
+            fogCheck.setSelected(
+                    world.fog
+            );
+
+            cameraX =
+                    worldWidth / 2.0;
+
+            cameraY =
+                    worldHeight / 2.0;
+
+            clampCamera();
+
+            render();
+
+            showMessage(
+                    "World loaded."
+            );
+
+        } catch (Exception e) {
+
+            e.printStackTrace();
+
+            showError(
+                    "Cannot open world:\n"
+                            + e.getMessage()
+            );
+        }
+    }
+
+    // =====================================================
+    // NEW WORLD
+    // =====================================================
+
+    private void newWorld() {
+
+        objects.clear();
+
+        worldWidth =
+                DEFAULT_WORLD_WIDTH;
+
+        worldHeight =
+                DEFAULT_WORLD_HEIGHT;
+
+        cameraX =
+                worldWidth / 2.0;
+
+        cameraY =
+                worldHeight / 2.0;
+
+        zoom =
+                0.25;
+
+        biomeBox.getSelectionModel()
+                .selectFirst();
+
+        rainCheck.setSelected(
+                false
+        );
+
+        snowCheck.setSelected(
+                false
+        );
+
+        fogCheck.setSelected(
+                false
+        );
+
+        zoomLabel.setText(
+                "Zoom: 25%"
+        );
+
+        render();
+    }
+
+    // =====================================================
+    // OBJECT POSITION
+    // =====================================================
+
+    private static class ObjectPosition {
+
+        private final String objectId;
+
+        private final int x;
+
+        private final int y;
+
+        private ObjectPosition(
+                String objectId,
+                int x,
+                int y
+        ) {
+
+            this.objectId =
+                    objectId;
+
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    // =====================================================
+    // DIALOGS
+    // =====================================================
+
+    private void showMessage(
+            String message
+    ) {
+
+        Alert alert =
+                new Alert(
+                        Alert.AlertType.INFORMATION
+                );
+
+        alert.setHeaderText(
+                null
+        );
+
+        alert.setContentText(
+                message
+        );
+
+        alert.show();
+    }
+
+    private void showError(
+            String message
+    ) {
+
+        Alert alert =
+                new Alert(
+                        Alert.AlertType.ERROR
+                );
+
+        alert.setHeaderText(
+                "Error"
+        );
+
+        alert.setContentText(
+                message
+        );
+
+        alert.show();
     }
 
     // =====================================================
     // STYLE
     // =====================================================
 
-    private Label createLabel(String text) {
+    private Label createLabel(
+            String text
+    ) {
 
         Label label =
-                new Label(text);
+                new Label(
+                        text
+                );
 
         label.setStyle("""
                 -fx-text-fill: white;
@@ -695,7 +1398,9 @@ public class EditorScene {
         return label;
     }
 
-    private void styleButton(Button button) {
+    private void styleButton(
+            Button button
+    ) {
 
         button.setStyle("""
                 -fx-background-color: #4c8cff;
@@ -705,15 +1410,9 @@ public class EditorScene {
                 """);
     }
 
-    private void styleTextField(TextField field) {
-
-        field.setStyle("""
-                -fx-background-color: #3a3a3a;
-                -fx-text-fill: white;
-                """);
-    }
-
-    private void styleComboBox(ComboBox<?> box) {
+    private void styleComboBox(
+            ComboBox<?> box
+    ) {
 
         box.setStyle("""
                 -fx-background-color: #3a3a3a;
@@ -721,7 +1420,9 @@ public class EditorScene {
                 """);
     }
 
-    private void styleCheckBox(CheckBox box) {
+    private void styleCheckBox(
+            CheckBox box
+    ) {
 
         box.setStyle("""
                 -fx-text-fill: white;

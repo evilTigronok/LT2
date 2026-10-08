@@ -2,7 +2,7 @@ package game.client;
 
 import com.google.gson.Gson;
 import game.network.dto.PlayerState;
-import game.network.packets.LocationPacket;
+
 import game.network.packets.WorldStatePacket;
 import game.ui.LobbyScene;
 import game.ui.WorldScene;
@@ -174,16 +174,18 @@ public class NetworkClient {
     // HELLO
     // =====================================
 
-    public void sendHello(
-            String playerName
-    ) {
+    public synchronized void sendHello(String playerName) {
 
-        if (playerName == null
-                || playerName.isBlank()) {
+        if (playerName == null || playerName.isBlank()) {
 
-            playerName =
-                    "Player-" + playerId;
+            if (playerId != null && !playerId.isBlank()) {
+                playerName = "Player-" + playerId;
+            } else {
+                playerName = "Player-" + System.currentTimeMillis();
+            }
         }
+
+        this.username = playerName;
 
         send(
                 "HELLO:"
@@ -330,34 +332,59 @@ public class NetworkClient {
             return;
         }
 
-        if (msg.startsWith("LOCATION:")) {
 
-            String json =
-                    msg.substring(
-                            "LOCATION:".length()
-                    );
-
-            LocationPacket packet =
-                    gson.fromJson(
-                            json,
-                            LocationPacket.class
-                    );
-
-            if (worldScene != null) {
-
-                Platform.runLater(() ->
-                        worldScene.loadLocation(
-                                packet.location
-                        )
-                );
-            }
-
-            return;
-        }
 
         if (msg.startsWith("WORLD_STATE")) {
 
             handleWorldState(msg);
+        }
+        if (msg.startsWith("COMBAT_HIT:")) {
+
+            handleCombatHit(msg);
+
+            return;
+        }
+    }
+
+    private void handleCombatHit(
+            String msg
+    ) {
+
+        String[] p =
+                msg.split(":");
+
+        if (p.length < 5) {
+            return;
+        }
+
+        try {
+
+            String targetId =
+                    p[1];
+
+            float x =
+                    Float.parseFloat(
+                            p[2]
+                    );
+
+            float y =
+                    Float.parseFloat(
+                            p[3]
+                    );
+
+            float damage =
+                    Float.parseFloat(
+                            p[4]
+                    );
+
+
+
+        } catch (NumberFormatException e) {
+
+            System.err.println(
+                    "Invalid COMBAT_HIT: "
+                            + msg
+            );
         }
     }
 
@@ -371,13 +398,26 @@ public class NetworkClient {
         String[] p =
                 msg.split(":");
 
+        /*
+         * Формат:
+         *
+         * WORLD_STATE:
+         * username:
+         * x:
+         * y:
+         * username:
+         * x:
+         * y
+         */
+
         for (
                 int i = 1;
-                i + 4 < p.length;
-                i += 5
+                i + 2 < p.length;
+                i += 3
         ) {
 
-            String username = p[i];
+            String username =
+                    p[i];
 
             float x =
                     Float.parseFloat(
@@ -389,23 +429,11 @@ public class NetworkClient {
                             p[i + 2]
                     );
 
-            int locationX =
-                    Integer.parseInt(
-                            p[i + 3]
-                    );
-
-            int locationY =
-                    Integer.parseInt(
-                            p[i + 4]
-                    );
-
             packet.players.add(
                     new PlayerState(
                             username,
                             x,
-                            y,
-                            locationX,
-                            locationY
+                            y
                     )
             );
         }

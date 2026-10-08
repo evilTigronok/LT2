@@ -4,14 +4,13 @@ import java.io.*;
 import java.net.Socket;
 import java.util.UUID;
 
+import game.world.ServerPlayer;
+
 public class ClientHandler implements Runnable {
 
     private final Socket socket;
-
     private final BufferedReader in;
-
     private final PrintWriter out;
-
     private final GameServer server;
 
     private final String playerId;
@@ -71,6 +70,7 @@ public class ClientHandler implements Runnable {
         } catch (IOException e) {
 
             if (connected) {
+
                 System.out.println(
                         "Client connection lost: "
                                 + playerId
@@ -85,7 +85,10 @@ public class ClientHandler implements Runnable {
 
     private void handle(String msg) {
 
-        if (msg == null || msg.isEmpty()) {
+        if (
+                msg == null
+                        || msg.isEmpty()
+        ) {
             return;
         }
 
@@ -132,12 +135,115 @@ public class ClientHandler implements Runnable {
 
                 break;
 
+            case "ATTACK":
+
+                handleAttack();
+
+                break;
+
+            /*
+             * ==========================================
+             * ДВИЖЕНИЕ
+             * ==========================================
+             *
+             * Клиент отправляет:
+             *
+             * INPUT:true:false:false:false
+             *
+             * где:
+             *
+             * [1] W
+             * [2] S
+             * [3] A
+             * [4] D
+             */
+            case "INPUT":
+
+                handleInput(parts);
+
+                break;
+
             default:
 
                 System.out.println(
                         "Unknown packet: "
                                 + msg
                 );
+        }
+    }
+
+    private void handleInput(
+            String[] parts
+    ) {
+
+        /*
+         * INPUT:
+         *   0 = INPUT
+         *   1 = up
+         *   2 = down
+         *   3 = left
+         *   4 = right
+         */
+        if (parts.length < 5) {
+
+            return;
+        }
+
+        if (
+                playerName == null
+                        || playerName.isBlank()
+        ) {
+
+            return;
+        }
+
+        ServerPlayer player =
+                server.getWorldManager()
+                        .getPlayer(
+                                playerName
+                        );
+
+        if (player == null) {
+
+            return;
+        }
+
+        try {
+
+            boolean up =
+                    Boolean.parseBoolean(
+                            parts[1]
+                    );
+
+            boolean down =
+                    Boolean.parseBoolean(
+                            parts[2]
+                    );
+
+            boolean left =
+                    Boolean.parseBoolean(
+                            parts[3]
+                    );
+
+            boolean right =
+                    Boolean.parseBoolean(
+                            parts[4]
+                    );
+
+            player.setUp(up);
+            player.setDown(down);
+            player.setLeft(left);
+            player.setRight(right);
+
+        } catch (Exception e) {
+
+            System.out.println(
+                    "Invalid INPUT packet: "
+                            + String.join(
+                            ":",
+                            parts
+                    )
+            );
         }
     }
 
@@ -157,12 +263,23 @@ public class ClientHandler implements Runnable {
         playerName =
                 parts[2];
 
-        if (playerName == null
-                || playerName.isBlank()) {
+        if (
+                playerName == null
+                        || playerName.isBlank()
+        ) {
 
             playerName =
                     "Player-" + playerId;
         }
+
+        /*
+         * Создаём игрока в игровом мире
+         * после успешного HELLO.
+         */
+        server.getWorldManager()
+                .addPlayer(
+                        playerName
+                );
 
         send(
                 "HELLO_OK:"
@@ -174,7 +291,9 @@ public class ClientHandler implements Runnable {
         server.broadcastLobbyState();
     }
 
-    public void send(String message) {
+    public void send(
+            String message
+    ) {
 
         if (!connected) {
             return;
@@ -196,10 +315,26 @@ public class ClientHandler implements Runnable {
 
         connected = false;
 
+        /*
+         * Удаляем игрока из игрового мира.
+         */
+        if (
+                playerName != null
+                        && !playerName.isBlank()
+        ) {
+
+            server.getWorldManager()
+                    .removePlayer(
+                            playerName
+                    );
+        }
+
         server.removeClient(this);
 
         try {
+
             socket.close();
+
         } catch (IOException ignored) {
         }
 
@@ -207,6 +342,17 @@ public class ClientHandler implements Runnable {
                 "Client disconnected: "
                         + playerId
         );
+    }
+
+    private void handleAttack() {
+        if (playerName == null || playerName.isBlank()) {
+            System.out.println("ATTACK IGNORED: player name is empty");
+            return;
+        }
+
+        System.out.println("ATTACK REQUEST: " + playerName);
+
+        server.getWorldManager().startAttack(playerName);
     }
 
     public String getPlayerId() {

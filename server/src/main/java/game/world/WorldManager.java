@@ -1,121 +1,176 @@
 package game.world;
 
+import game.combat.AttackSystem;
+import game.combat.TrainingDummy;
+import game.data.GameData;
 import game.network.dto.PlayerState;
 import game.network.packets.WorldStatePacket;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import game.world.data.LocationData;
-import game.world.data.LocationIO;
-
-import game.data.GameData;
+import game.world.data.WorldData;
+import game.world.data.WorldIO;
+import game.combat.CombatTarget;
+import game.combat.TrainingDummy;
 
 import java.io.File;
-import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class WorldManager {
+
+    private static final String WORLD_FILE =
+            "world/world.json";
 
     private final Map<String, ServerPlayer> players =
             new ConcurrentHashMap<>();
 
-    private final Map<String, LocationData> locations =
-            new HashMap<>();
+    private final AttackSystem attackSystem =
+            new AttackSystem();
+
+    private WorldData world;
+    private final GameMap gameMap;
+
+
+    private final TrainingDummy trainingDummy;
 
     public WorldManager() {
 
-        loadLocations();
+        world = loadWorld();
+
+        gameMap =
+                new GameMap(
+                        world.width,
+                        world.height
+                );
+
+        trainingDummy =
+                new TrainingDummy(
+                        world.width / 2f - 20f,
+                        world.height / 2f + 90f
+                );
+
+        attackSystem.addTarget(
+                trainingDummy
+        );
+
+        System.out.println(
+                "WORLD SIZE = "
+                        + world.width
+                        + "x"
+                        + world.height
+        );
+
+        System.out.println(
+                "WORLD OBJECTS = "
+                        + world.objects.size()
+        );
+
+        attackSystem.addTarget(
+                new CombatTarget(
+                        "training_dummy",
+                        gameMap.getWidth() / 2f - 20f,
+                        gameMap.getHeight() / 2f + 40f,
+                        40f,
+                        40f,
+                        1000f
+                )
+        );
     }
 
-    private void loadLocations() {
+    public TrainingDummy getTrainingDummy() {
 
+        return trainingDummy;
+    }
+
+    // =====================================================
+    // WORLD
+    // =====================================================
+
+    private WorldData loadWorld() {
 
         try {
 
-            File folder =
+            File file =
                     GameData
-                            .resolve("locations")
+                            .resolve(WORLD_FILE)
                             .toFile();
 
             System.out.println(
-                    folder.getAbsolutePath()
-            );
-            System.out.println(
-                    folder.exists()
+                    "WORLD FILE = "
+                            + file.getAbsolutePath()
             );
 
-            File[] files =
-                    folder.listFiles(
-                            (dir, name) ->
-                                    name.endsWith(".json")
-                    );
-
-            if (files == null) {
-                return;
-            }
-
-            for (File file : files) {
-
-                LocationData location =
-                        LocationIO.load(file);
-
-                String name = file.getName().replace(".json", "");
-                String key = name;
-
-                locations.put(
-                        key,
-                        location
-                );
+            if (!file.exists()) {
 
                 System.out.println(
-                        "Loaded location "
-                                + key
-                                + " objects="
-                                + location.objects.size()
+                        "World file not found. "
+                                + "Creating default world."
                 );
-                System.out.println(
-                        "LOCATIONS KEYS = " + locations.keySet()
+
+                WorldData newWorld =
+                        new WorldData(
+                                GameMap.DEFAULT_WIDTH,
+                                GameMap.DEFAULT_HEIGHT
+                        );
+
+                WorldIO.save(
+                        newWorld,
+                        file
                 );
+
+                return newWorld;
             }
+
+            return WorldIO.load(file);
 
         } catch (Exception e) {
 
             e.printStackTrace();
+
+            /*
+             * Даже если world.json повреждён,
+             * сервер получает безопасный fallback.
+             */
+            return new WorldData(
+                    GameMap.DEFAULT_WIDTH,
+                    GameMap.DEFAULT_HEIGHT
+            );
         }
     }
 
-    public LocationData getLocation(
-            int x,
-            int y
-    ) {
-
-        String key = x + "_" + y;
-
-        System.out.println(
-                "REQUEST LOCATION = " + key
-        );
-
-        System.out.println(
-                "FOUND = " + locations.containsKey(key)
-        );
-
-        return locations.get(key);
+    public WorldData getWorld() {
+        return world;
     }
 
-    public LocationData getPlayerLocation(ServerPlayer player) {
-        return getLocation(player.getLocationX(), player.getLocationY());
+    public GameMap getGameMap() {
+        return gameMap;
     }
+
+    // =====================================================
+    // PLAYERS
+    // =====================================================
 
     public void addPlayer(String username) {
 
         players.remove(username);
 
+        ServerPlayer player =
+                new ServerPlayer(
+                        username,
+                        gameMap.getWidth(),
+                        gameMap.getHeight()
+                );
+
         players.put(
                 username,
-                new ServerPlayer(username)
+                player
         );
 
         System.out.println(
-                "ADD PLAYER " + username
+                "ADD PLAYER "
+                        + username
+                        + " @ "
+                        + player.getX()
+                        + ","
+                        + player.getY()
         );
     }
 
@@ -124,34 +179,55 @@ public class WorldManager {
         players.remove(username);
     }
 
-    public ServerPlayer getPlayer(String username) {
+    public ServerPlayer getPlayer(
+            String username
+    ) {
 
         return players.get(username);
     }
 
+    // =====================================================
+    // UPDATE
+    // =====================================================
+
     public void update() {
 
-        for (ServerPlayer player : players.values()) {
+        for (ServerPlayer player :
+                players.values()) {
+
             player.update();
         }
+
+        attackSystem.update();
     }
 
-
+    // =====================================================
+    // STATE
+    // =====================================================
 
     public WorldStatePacket buildStatePacket() {
 
         WorldStatePacket packet =
                 new WorldStatePacket();
 
-        for (ServerPlayer player : players.values()) {
+        for (ServerPlayer player :
+                players.values()) {
 
+            /*
+             * Старый PlayerState пока содержит
+             * locationX/locationY.
+             *
+             * До полной переделки DTO отправляем
+             * туда 0,0.
+             *
+             * Следующим этапом мы уберём эти поля
+             * из сетевого протокола полностью.
+             */
             packet.players.add(
                     new PlayerState(
                             player.getUsername(),
                             player.getX(),
-                            player.getY(),
-                            player.getLocationX(),
-                            player.getLocationY()
+                            player.getY()
                     )
             );
         }
@@ -159,5 +235,34 @@ public class WorldManager {
         return packet;
     }
 
+    public void startAttack(String username) {
 
+        ServerPlayer player =
+                players.get(username);
+
+        if (player == null) {
+            return;
+        }
+
+        var attack =
+                player.attack();
+
+        if (attack == null) {
+            return;
+        }
+
+        attackSystem.startAttack(
+                player,
+                attack
+        );
+    }
+
+    public void setCombatHitListener(
+            java.util.function.Consumer<game.combat.CombatHit> listener
+    ) {
+
+        attackSystem.setHitListener(
+                listener
+        );
+    }
 }

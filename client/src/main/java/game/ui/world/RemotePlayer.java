@@ -1,5 +1,7 @@
 package game.ui.world;
 
+import game.avatar.Direction;
+
 public class RemotePlayer {
 
     public String username;
@@ -15,7 +17,19 @@ public class RemotePlayer {
     public int locationX;
     public int locationY;
 
-    public RemotePlayer(String username, float x, float y) {
+    /*
+     * Текущее направление персонажа.
+     *
+     * По умолчанию смотрит вниз.
+     */
+    public Direction direction =
+            Direction.DOWN;
+
+    public RemotePlayer(
+            String username,
+            float x,
+            float y
+    ) {
 
         this.username = username;
 
@@ -28,7 +42,12 @@ public class RemotePlayer {
 
     public void update() {
 
-        renderX += (serverX - renderX) * smoothing;
-        renderY += (serverY - renderY) * smoothing;
+        renderX +=
+                (serverX - renderX)
+                        * smoothing;
+
+        renderY +=
+                (serverY - renderY)
+                        * smoothing;
     }
 }

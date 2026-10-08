@@ -40,7 +40,38 @@ public class HostManager {
                     );
 
             serverThread.setDaemon(true);
+
             serverThread.start();
+
+            /*
+             * =============================================
+             * ЖДЁМ ФАКТИЧЕСКОЙ ГОТОВНОСТИ СЕРВЕРА
+             * =============================================
+             *
+             * start() выполняется в другом потоке.
+             *
+             * Поэтому одного serverThread.start()
+             * недостаточно.
+             *
+             * awaitReady() вернёт true только после того,
+             * как GameServer успешно создаст ServerSocket.
+             */
+
+            boolean ready =
+                    server.awaitReady();
+
+            if (!ready) {
+
+                System.err.println(
+                        "Embedded server failed to become ready"
+                );
+
+                server.stop();
+
+                server = null;
+
+                return false;
+            }
 
             System.out.println(
                     "Embedded server started on port "
@@ -85,10 +116,12 @@ public class HostManager {
     }
 
     public synchronized int getPort() {
+
         return port;
     }
 
     public synchronized GameServer getServer() {
+
         return server;
     }
 
@@ -153,7 +186,8 @@ public class HostManager {
         List<String> result =
                 new ArrayList<>();
 
-        for (String address : getLocalAddresses()) {
+        for (String address :
+                getLocalAddresses()) {
 
             result.add(
                     address + ":" + getPort()

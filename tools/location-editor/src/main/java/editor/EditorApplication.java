@@ -8,7 +8,9 @@ public class EditorApplication
         extends Application {
 
     @Override
-    public void start(Stage stage) {
+    public void start(
+            Stage stage
+    ) {
 
         EditorScene editor =
                 new EditorScene();
@@ -21,15 +23,20 @@ public class EditorApplication
                 );
 
         stage.setTitle(
-                "Location Editor"
+                "World Editor"
         );
 
-        stage.setScene(scene);
+        stage.setScene(
+                scene
+        );
 
         stage.show();
     }
 
-    public static void main(String[] args) {
+    public static void main(
+            String[] args
+    ) {
+
         launch(args);
     }
 }

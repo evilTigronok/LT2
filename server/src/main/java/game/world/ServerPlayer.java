@@ -1,6 +1,11 @@
 package game.world;
 
-import java.io.File;
+import game.combat.Attack;
+import game.combat.DamageCalculator;
+import game.player.PlayerEquipment;
+import game.weapon.AttackStyle;
+import game.weapon.Weapon;
+import game.weapon.WeaponFactory;
 
 public class ServerPlayer {
 
@@ -9,48 +14,73 @@ public class ServerPlayer {
     private float x;
     private float y;
 
-    private int locationX;
-    private int locationY;
-
-    private int lastLocationX;
-    private int lastLocationY;
-
-    private boolean locationChanged;
-
     private boolean up;
     private boolean down;
     private boolean left;
     private boolean right;
 
-    private final float speed = 24f;
+    /*
+     * Базовый ATK игрока.
+     *
+     * Пока фиксированный.
+     * Позже вынесем в PlayerStats.
+     */
+    private float attack = 5f;
 
-    public ServerPlayer(String username) {
+    /*
+     * Экипировка игрока.
+     */
+    private final PlayerEquipment equipment =
+            new PlayerEquipment();
+
+    /*
+     * Последнее направление движения.
+     *
+     * Пока храним отдельно.
+     * Позже можно заменить на общий Direction.
+     */
+    private float directionX = 0f;
+    private float directionY = 1f;
+
+    /*
+     * Время следующей доступной атаки.
+     */
+    private long nextAttackTime = 0L;
+
+    private final float speed = 6f;
+
+    private final float worldWidth;
+    private final float worldHeight;
+
+    public ServerPlayer(
+            String username,
+            float worldWidth,
+            float worldHeight
+    ) {
+
         this.username = username;
 
-        this.x = 500;
-        this.y = 300;
+        this.worldWidth = worldWidth;
+        this.worldHeight = worldHeight;
 
-        this.locationX = 0;
-        this.locationY = 0;
+        this.x =
+                (worldWidth - 40f) / 2f;
 
-        locationChanged = true;
+        this.y =
+                (worldHeight - 40f) / 2f;
 
-    }
-
-    public int getLocationX() {
-        return locationX;
-    }
-
-    public int getLocationY() {
-        return locationY;
-    }
-
-    public boolean isLocationChanged() {
-        return locationChanged;
-    }
-
-    public void resetLocationChanged() {
-        locationChanged = false;
+        /*
+         * Стартовое оружие.
+         *
+         * [3 + 100% ATK]
+         *
+         * При ATK игрока = 5:
+         *
+         * 3 + 5 * 1.0 = 8 урона.
+         */
+        equipment.equipWeapon(
+                WeaponFactory.createIronSword()
+        );
     }
 
     public void update() {
@@ -58,118 +88,126 @@ public class ServerPlayer {
         float dx = 0;
         float dy = 0;
 
-        if (up) dy -= 1;
-        if (down) dy += 1;
-        if (left) dx -= 1;
-        if (right) dx += 1;
-
-        float length = (float)Math.sqrt(dx * dx + dy * dy);
-
-        if (length != 0) {
-            dx /= length;
-            dy /= length;
+        if (up) {
+            dy -= 1;
         }
+
+        if (down) {
+            dy += 1;
+        }
+
+        if (left) {
+            dx -= 1;
+        }
+
+        if (right) {
+            dx += 1;
+        }
+
+        if (dx == 0 && dy == 0) {
+            return;
+        }
+
+        float length =
+                (float) Math.sqrt(
+                        dx * dx + dy * dy
+                );
+
+        dx /= length;
+        dy /= length;
+
+        /*
+         * Запоминаем последнее направление.
+         *
+         * Оно используется при атаке,
+         * даже если игрок стоит на месте.
+         */
+        directionX = dx;
+        directionY = dy;
 
         x += dx * speed;
         y += dy * speed;
 
-        final float WORLD_WIDTH = 1920;
-        final float WORLD_HEIGHT = 1080;
-
-        if (x < 0) {
-
-            if (locationExists(
-                    locationX - 1,
-                    locationY
-            )) {
-
-                locationX--;
-                x = WORLD_WIDTH - 60;
-
-            } else {
-
-                x = 0;
-            }
-        }
-        if (x > WORLD_WIDTH - 40) {
-
-            if (locationExists(
-                    locationX + 1,
-                    locationY
-            )) {
-
-                locationX++;
-                x = 60;
-
-                System.out.println(
-                        username
-                                + " -> "
-                                + locationX
-                                + ","
-                                + locationY
+        x =
+                Math.max(
+                        0,
+                        Math.min(
+                                worldWidth - 40f,
+                                x
+                        )
                 );
 
-            } else {
-
-                x = WORLD_WIDTH - 40;
-            }
-        }
-        if (y < 0) {
-
-            if (locationExists(
-                    locationX,
-                    locationY - 1
-            )) {
-
-                locationY--;
-                y = WORLD_HEIGHT - 60;
-
-            } else {
-
-                y = 0;
-            }
-        }
-        if (y > WORLD_HEIGHT - 40) {
-
-            if (locationExists(
-                    locationX,
-                    locationY + 1
-            )) {
-
-                locationY++;
-                y = 60;
-
-            } else {
-
-                y = WORLD_HEIGHT - 40;
-            }
-        }
-        if (locationX != lastLocationX || locationY != lastLocationY) {
-            locationChanged = true;
-
-            lastLocationX = locationX;
-            lastLocationY = locationY;
-        }
+        y =
+                Math.max(
+                        0,
+                        Math.min(
+                                worldHeight - 40f,
+                                y
+                        )
+                );
     }
 
-    private boolean locationExists(
-            int x,
-            int y
-    ) {
+    /**
+     * Пытается выполнить атаку.
+     *
+     * Возвращает Attack, если атака разрешена.
+     * Возвращает null, если:
+     *
+     * - оружия нет;
+     * - cooldown ещё не закончился.
+     */
+    public synchronized Attack attack() {
 
-        File file =
-                new File(
-                        "server/data/locations/"
-                                + x
-                                + "_"
-                                + y
-                                + ".json"
+        Weapon weapon =
+                equipment.getWeapon();
+
+        if (weapon == null) {
+            return null;
+        }
+
+        long now =
+                System.currentTimeMillis();
+
+        if (now < nextAttackTime) {
+            return null;
+        }
+
+        /*
+         * Следующая доступная атака.
+         *
+         * attackSpeed трактуется как
+         * количество атак в секунду.
+         *
+         * Например:
+         *
+         * 1.0 -> 1000 мс
+         * 2.0 -> 500 мс
+         * 0.5 -> 2000 мс
+         */
+        long cooldown =
+                (long) (
+                        1000.0
+                                / weapon.getAttackSpeed()
                 );
 
-        return file.exists();
-    }
+        nextAttackTime =
+                now + cooldown;
 
-    // ===== getters/setters =====
+        float damage =
+                DamageCalculator
+                        .calculateTickDamage(
+                                weapon,
+                                attack
+                        );
+
+        return new Attack(
+                weapon.getId(),
+                weapon.getAttackStyle(),
+                damage,
+                weapon.getPrimaryAttack().getHitCount(),
+                (float) weapon.getAttackInterval()
+        );
+    }
 
     public String getUsername() {
         return username;
@@ -181,6 +219,22 @@ public class ServerPlayer {
 
     public float getY() {
         return y;
+    }
+
+    public float getAttack() {
+        return attack;
+    }
+
+    public PlayerEquipment getEquipment() {
+        return equipment;
+    }
+
+    public float getDirectionX() {
+        return directionX;
+    }
+
+    public float getDirectionY() {
+        return directionY;
     }
 
     public void setUp(boolean up) {

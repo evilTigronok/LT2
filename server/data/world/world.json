@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "width": 10000,
+  "height": 10000,
+  "biome": "Forest",
+  "rain": false,
+  "snow": false,
+  "fog": false,
+  "objects": []
+}

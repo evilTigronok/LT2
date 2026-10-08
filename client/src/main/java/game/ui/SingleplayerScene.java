@@ -21,20 +21,24 @@ public class SingleplayerScene {
 
         Label title =
                 new Label(
-                        "SINGLEPLAYER"
+                        "ОДИНОЧНАЯ ИГРА"
                 );
 
-        title.setStyle(
-                "-fx-font-size: 36px;"
-        );
-
-        Label info =
-                new Label(
-                        "Singleplayer mode will be implemented separately."
+        Button start =
+                new Button(
+                        "НАЧАТЬ ИГРУ"
                 );
 
         Button back =
-                new Button("BACK");
+                new Button(
+                        "НАЗАД"
+                );
+
+        start.setOnAction(e ->
+                sceneManager.show(
+                        SceneType.WORLD
+                )
+        );
 
         back.setOnAction(e ->
                 sceneManager.show(
@@ -44,7 +48,7 @@ public class SingleplayerScene {
 
         root.getChildren().addAll(
                 title,
-                info,
+                start,
                 back
         );
     }

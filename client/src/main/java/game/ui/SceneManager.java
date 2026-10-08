@@ -57,6 +57,15 @@ public class SceneManager {
 
                 break;
 
+            case SINGLEPLAYER:
+
+                root =
+                        new SingleplayerScene(
+                                this
+                        ).getRoot();
+
+                break;
+
             case MULTIPLAYER:
 
                 root =
