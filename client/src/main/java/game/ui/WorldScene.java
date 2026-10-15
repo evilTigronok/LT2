@@ -421,6 +421,8 @@ public class WorldScene {
     }
     private double gungnirDrillVisualAngle = 0.0;
 
+    private int saveSlot = 1;
+
 
     /*
      * =====================================================
@@ -6247,6 +6249,51 @@ public class WorldScene {
                         + ")"
         );
     }
+
+    public void setSaveSlot(int slot) {
+        if (slot <= 0) {
+            throw new IllegalArgumentException(
+                    "Номер слота должен быть больше 0"
+            );
+        }
+        this.saveSlot = slot;
+    }
+
+    public void saveGame() {
+        if (localPlayer == null) {
+            System.out.println("Сохранение пропущено: игрок не создан.");
+            return;
+        }
+
+        SaveData data = SaveManager.load(saveSlot);
+
+        if (data == null) {
+            data = new SaveData();
+            data.slot = saveSlot;
+            data.saveName = "Сохранение " + saveSlot;
+        }
+
+        data.player.x = (float) localPlayer.serverX;
+        data.player.y = (float) localPlayer.serverY;
+        data.player.locationX = locationX;
+        data.player.locationY = locationY;
+
+        data.world.currentLocationId = locationX + "_" + locationY;
+
+        try {
+            SaveManager.save(data);
+            System.out.println(
+                    "Игра сохранена в слот " + saveSlot
+                            + ": x=" + data.player.x
+                            + ", y=" + data.player.y
+                            + ", location=" + locationX + "," + locationY
+            );
+        } catch (RuntimeException e) {
+            System.err.println("Не удалось сохранить игру:");
+            e.printStackTrace();
+        }
+    }
+
 
     private static class DamagePopup {
 

@@ -28,6 +28,12 @@ public class RPGApplication extends Application {
                 SceneType.MAIN_MENU
         );
 
+        stage.setOnCloseRequest(event -> {
+            if (sceneManager != null) {
+                sceneManager.saveCurrentGame();
+            }
+        });
+
         stage.show();
     }
 

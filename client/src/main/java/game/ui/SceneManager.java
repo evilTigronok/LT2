@@ -21,6 +21,8 @@ public class SceneManager {
     private Difficulty pendingDifficulty =
             Difficulty.EXHAUSTING;
 
+    private WorldScene currentWorldScene;
+
     public SceneManager(
             Stage stage,
             NetworkClient client
@@ -141,25 +143,14 @@ public class SceneManager {
                 break;
 
             case WORLD:
-
-                WorldScene worldScene =
-                        new WorldScene(
-                                this,
-                                client,
-                                client.getUsername(),
-                                pendingSave,
-                                pendingDifficulty
-                        );
-
-                pendingSave = null;
-
-                client.setWorldScene(
-                        worldScene
+                currentWorldScene = new WorldScene(
+                        this,
+                        client,
+                        username
                 );
 
-                root =
-                        worldScene.getRoot();
-
+                client.setWorldScene(currentWorldScene);
+                root = currentWorldScene.getRoot();
                 break;
 
             default:
@@ -178,5 +169,11 @@ public class SceneManager {
         );
 
         stage.setMaximized(true);
+    }
+
+    public void saveCurrentGame() {
+        if (currentWorldScene != null) {
+            currentWorldScene.saveGame();
+        }
     }
 }
