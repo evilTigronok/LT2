@@ -2,6 +2,8 @@ package game.ui;
 
 import game.client.HostManager;
 import game.client.NetworkClient;
+import game.save.Difficulty;
+import game.save.SaveData;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
@@ -14,6 +16,11 @@ public class SceneManager {
 
     private final HostManager hostManager;
 
+    private SaveData pendingSave;
+
+    private Difficulty pendingDifficulty =
+            Difficulty.EXHAUSTING;
+
     public SceneManager(
             Stage stage,
             NetworkClient client
@@ -24,6 +31,34 @@ public class SceneManager {
 
         this.hostManager =
                 new HostManager();
+    }
+
+    public void startNewGame(
+            Difficulty difficulty
+    ) {
+
+        pendingSave = null;
+
+        pendingDifficulty =
+                difficulty;
+
+        show(SceneType.WORLD);
+    }
+    public void continueGame(
+            SaveData save
+    ) {
+
+        if (save == null) {
+            return;
+        }
+
+        pendingSave =
+                save;
+
+        pendingDifficulty =
+                save.difficulty;
+
+        show(SceneType.WORLD);
     }
 
     public HostManager getHostManager() {
@@ -111,8 +146,12 @@ public class SceneManager {
                         new WorldScene(
                                 this,
                                 client,
-                                client.getUsername()
+                                client.getUsername(),
+                                pendingSave,
+                                pendingDifficulty
                         );
+
+                pendingSave = null;
 
                 client.setWorldScene(
                         worldScene

@@ -1,6 +1,7 @@
 
 package game.ui;
 
+import game.achievement.AchievementManager;
 import game.audio.MusicManager;
 import game.boss.BossManager;
 import game.boss.Boss;
@@ -8,6 +9,9 @@ import game.boss.DungeonBossRegistry;
 import game.combat.*;
 
 import game.player.PlayerSkillLoadout;
+import game.save.Difficulty;
+import game.save.SaveData;
+import game.save.SaveManager;
 import game.weapon.WeaponFactory;
 import game.world.location.Location;
 import game.world.location.Portal;
@@ -89,6 +93,10 @@ public class WorldScene {
 
     private final LocalCombatSystem combatSystem =
             new LocalCombatSystem();
+
+    private final Difficulty difficulty;
+
+    private final AchievementManager achievementManager;
 
     /*
      * =====================================================
@@ -423,14 +431,31 @@ public class WorldScene {
     public WorldScene(
             SceneManager sceneManager,
             NetworkClient client,
-            String username
+            String username,
+            SaveData saveData,
+            Difficulty difficulty
     ) {
 
         this.client = client;
         this.username = username;
-        this.weaponLoadoutStorage = new WeaponLoadoutStorage(username);
 
-        this.sceneManager = sceneManager;
+        this.difficulty =
+                difficulty == null
+                        ? Difficulty.EXHAUSTING
+                        : difficulty;
+
+        this.achievementManager =
+                new AchievementManager(
+                        username
+                );
+
+        this.weaponLoadoutStorage =
+                new WeaponLoadoutStorage(
+                        username
+                );
+
+        this.sceneManager =
+                sceneManager;
 
         root.setPrefSize(
                 1920,
@@ -498,6 +523,19 @@ public class WorldScene {
                         (float) (worldWidth / 2.0 - PLAYER_SIZE / 2.0),
                         (float) (worldHeight / 2.0 - PLAYER_SIZE / 2.0)
                 );
+
+        if (saveData != null) {
+
+            applySave(
+                    saveData
+            );
+
+        } else {
+
+            achievementManager.unlock(
+                    "first_save"
+            );
+        }
 
         //temp
         float dummyX =
@@ -620,6 +658,107 @@ public class WorldScene {
     public Parent getRoot() {
 
         return root;
+    }
+
+    private SaveData createSaveData(
+            int slot
+    ) {
+
+        SaveData data =
+                new SaveData();
+
+        data.slot =
+                slot;
+
+        data.saveName =
+                "Сохранение " + slot;
+
+        data.difficulty =
+                difficulty;
+
+        /*
+         * PLAYER
+         */
+
+        data.player.x =
+                localPlayer.serverX;
+
+        data.player.y =
+                localPlayer.serverY;
+
+        data.player.hp =
+                playerHp;
+
+        data.player.maxHp =
+                playerMaxHp;
+
+        data.player.locationX =
+                localPlayer.locationX;
+
+        data.player.locationY =
+                localPlayer.locationY;
+
+        /*
+         * WORLD
+         */
+
+        data.world.width =
+                (int) worldWidth;
+
+        data.world.height =
+                (int) worldHeight;
+
+        /*
+         * WEAPONS
+         */
+
+        for (Weapon weapon :
+                inventory.getWeapons()) {
+
+            if (weapon != null) {
+
+                data.weaponIds.add(
+                        weapon.getId()
+                );
+            }
+        }
+
+        Weapon melee =
+                inventory.getEquippedMeleeWeapon();
+
+        Weapon ranged =
+                inventory.getEquippedRangedWeapon();
+
+        data.equippedMelee =
+                melee == null
+                        ? null
+                        : melee.getId();
+
+        data.equippedRanged =
+                ranged == null
+                        ? null
+                        : ranged.getId();
+
+        data.meleeActive =
+                meleeActive;
+
+        /*
+         * BOSSES
+         */
+
+        for (Boss boss :
+                bossManager.getBosses()) {
+
+            if (boss != null
+                    && boss.isDefeated()) {
+
+                data.defeatedBosses.add(
+                        boss.getId()
+                );
+            }
+        }
+
+        return data;
     }
 
     private boolean isAngelicDoom(Weapon weapon) {
@@ -1122,6 +1261,168 @@ public class WorldScene {
         );
     }
 
+    private void applySave(
+            SaveData data
+    ) {
+
+        if (data == null) {
+            return;
+        }
+
+        /*
+         * PLAYER
+         */
+
+        localPlayer.serverX =
+                data.player.x;
+
+        localPlayer.serverY =
+                data.player.y;
+
+        localPlayer.renderX =
+                data.player.x;
+
+        localPlayer.renderY =
+                data.player.y;
+
+        localPlayer.locationX =
+                data.player.locationX;
+
+        localPlayer.locationY =
+                data.player.locationY;
+
+        playerHp =
+                data.player.hp;
+
+        playerMaxHp =
+                data.player.maxHp;
+
+        /*
+         * WEAPONS
+         */
+
+        restoreWeaponsFromSave(
+                data
+        );
+
+        /*
+         * ACTIVE WEAPON
+         */
+
+        meleeActive =
+                data.meleeActive;
+
+        /*
+         * BOSSES
+         */
+
+        for (String bossId :
+                data.defeatedBosses) {
+
+            Boss boss =
+                    bossManager.getBoss(
+                            bossId
+                    );
+
+            if (boss != null) {
+                boss.setHp(0f);
+            }
+        }
+
+        refreshCharacterPanel();
+    }
+    private void restoreWeaponsFromSave(
+            SaveData data
+    ) {
+
+        inventory.clearWeapons();
+
+        for (String weaponId :
+                data.weaponIds) {
+
+            Weapon weapon =
+                    createWeaponById(
+                            weaponId
+                    );
+
+            if (weapon != null) {
+
+                inventory.addWeapon(
+                        weapon
+                );
+            }
+        }
+
+        if (data.equippedMelee != null) {
+
+            Weapon weapon =
+                    inventory.findWeaponById(
+                            data.equippedMelee
+                    );
+
+            if (weapon != null) {
+                inventory.equipMeleeWeapon(
+                        weapon
+                );
+            }
+        }
+
+        if (data.equippedRanged != null) {
+
+            Weapon weapon =
+                    inventory.findWeaponById(
+                            data.equippedRanged
+                    );
+
+            if (weapon != null) {
+                inventory.equipRangedWeapon(
+                        weapon
+                );
+            }
+        }
+    }
+    private Weapon createWeaponById(
+            String id
+    ) {
+
+        if (id == null) {
+            return null;
+        }
+
+        return switch (id) {
+
+            case "weighted_claymore" ->
+                    WeaponFactory.createWeightedClaymore();
+
+            case "angelic_doom" ->
+                    WeaponFactory.createAngelicDoom();
+
+            case "gungnir" ->
+                    WeaponFactory.createGungnir();
+
+            case "reliable_spear" ->
+                    WeaponFactory.createReliableSpear();
+
+            case "gungnir_launcher" ->
+                    WeaponFactory.createGungnirLauncher();
+
+            case "mourning" ->
+                    WeaponFactory.createMourning();
+
+            case "ice_shooter" ->
+                    WeaponFactory.createIceShooter();
+
+            case "doom_star_shooter" ->
+                    WeaponFactory.createDoomStarShooter();
+
+            default ->
+                    null;
+        };
+    }
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
     private void setupGameMenu() {
 
         gameMenu.setPrefWidth(260);
@@ -1142,6 +1443,11 @@ public class WorldScene {
         -fx-border-width: 1;
         """);
 
+        Button saveButton =
+                createMenuButton(
+                        "СОХРАНИТЬ"
+                );
+
         Button returnButton =
                 createMenuButton("Вернуться");
 
@@ -1152,6 +1458,24 @@ public class WorldScene {
                 createMenuButton(
                         "Выйти в главное меню"
                 );
+
+        saveButton.setOnAction(e -> {
+
+            SaveData data =
+                    createSaveData(1);
+
+            SaveManager.save(
+                    data
+            );
+
+            achievementManager.unlock(
+                    "first_save"
+            );
+
+            infoLabel.setText(
+                    "Игра сохранена."
+            );
+        });
 
         returnButton.setOnAction(e ->
                 setGameMenuVisible(false)
