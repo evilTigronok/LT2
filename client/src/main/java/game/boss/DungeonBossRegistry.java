@@ -2,6 +2,7 @@ package game.boss;
 
 import game.boss.ancient.AncientAngelBoss;
 import game.combat.LocalCombatSystem;
+import game.save.Difficulty;
 
 import java.util.function.Consumer;
 
@@ -37,7 +38,8 @@ public final class DungeonBossRegistry {
     public static void register(
             BossManager bossManager,
             LocalCombatSystem combatSystem,
-            Consumer<Float> playerDamageListener
+            Consumer<Float> playerDamageListener,
+            Difficulty difficulty
     ) {
         if (bossManager == null) {
             throw new IllegalArgumentException("BossManager cannot be null");
@@ -53,7 +55,8 @@ public final class DungeonBossRegistry {
                 ANCIENT_ANGEL_SIZE,
                 ANCIENT_ANGEL_MAX_HP,
                 ANCIENT_ANGEL_CENTER_X,
-                ANCIENT_ANGEL_CENTER_Y
+                ANCIENT_ANGEL_CENTER_Y,
+                difficulty
         );
 
         if (playerDamageListener != null) {

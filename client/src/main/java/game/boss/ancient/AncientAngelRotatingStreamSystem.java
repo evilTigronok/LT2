@@ -13,12 +13,32 @@ public class AncientAngelRotatingStreamSystem {
 
     private Consumer<Float> damageListener;
 
+    public void spawn(float initialAngle) {
+        streams.add(
+                new AncientAngelRotatingStream(initialAngle)
+        );
+    }
+
     public void spawn(
-            float initialAngle
+            float initialAngle,
+            float lifetime,
+            float spawnInterval,
+            float rotationSpeed,
+            float projectileSpeed,
+            float projectileDamage,
+            float projectileMaxDistance,
+            float spreadAngle
     ) {
         streams.add(
                 new AncientAngelRotatingStream(
-                        initialAngle
+                        initialAngle,
+                        lifetime,
+                        spawnInterval,
+                        rotationSpeed,
+                        projectileSpeed,
+                        projectileDamage,
+                        projectileMaxDistance,
+                        spreadAngle
                 )
         );
     }

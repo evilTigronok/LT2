@@ -1,5 +1,7 @@
 package game.combat;
 
+import game.save.Difficulty;
+import game.save.DifficultySettings;
 import game.weapon.Weapon;
 import game.weapon.WeaponType;
 
@@ -25,7 +27,25 @@ public class LocalCombatSystem {
 
     private Consumer<LocalCombatHit> hitListener;
 
+    private final Difficulty difficulty;
+
     public LocalCombatSystem() {
+        this.difficulty = null;
+    }
+
+    public LocalCombatSystem(Difficulty difficulty) {
+        this.difficulty = difficulty;
+    }
+
+    private float scalePlayerDamage(float baseDamage) {
+        if (difficulty == null) {
+            return baseDamage;
+        }
+
+        return DifficultySettings.playerDamage(
+                difficulty,
+                baseDamage
+        );
     }
 
     public void setHitListener(
@@ -83,11 +103,19 @@ public class LocalCombatSystem {
             return false;
         }
 
-        float damage =
+        float baseDamage =
                 DamageCalculator.calculateTickDamage(
                         weapon,
                         playerAttack
                 );
+
+        float damage = difficulty == null
+                ? baseDamage
+                : DifficultySettings.weaponDamage(
+                difficulty,
+                baseDamage,
+                weapon.getQuality()
+        );
 
         SwordSwing swing =
                 new SwordSwing(
@@ -264,6 +292,8 @@ public class LocalCombatSystem {
             return;
         }
 
+        damage = scalePlayerDamage(damage);
+
         float radiusSquared =
                 radius * radius;
 
@@ -333,6 +363,8 @@ public class LocalCombatSystem {
         if (length <= 0f || width <= 0f || damage <= 0f) {
             return;
         }
+
+        damage = scalePlayerDamage(damage);
 
         float directionLength =
                 (float) Math.sqrt(

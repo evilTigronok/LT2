@@ -7,11 +7,13 @@ public enum Difficulty {
             0.75f,
             0.75f,
             1.25f,
-            0.75f
+            0.75f,
+            1.0f
     ),
 
     EXHAUSTING(
             "Изнурительная",
+            1.0f,
             1.0f,
             1.0f,
             1.0f,
@@ -22,29 +24,32 @@ public enum Difficulty {
             "Божественная",
             1.50f,
             1.50f,
-            0.75f,
-            1.50f
+            0.60f,
+            1.50f,
+            0.75f
     );
 
     private final String displayName;
-
     private final float enemyHealthMultiplier;
     private final float enemyDamageMultiplier;
     private final float playerDamageMultiplier;
     private final float worldPressureMultiplier;
+    private final float playerSpeedMultiplier;
 
     Difficulty(
             String displayName,
             float enemyHealthMultiplier,
             float enemyDamageMultiplier,
             float playerDamageMultiplier,
-            float worldPressureMultiplier
+            float worldPressureMultiplier,
+            float playerSpeedMultiplier
     ) {
         this.displayName = displayName;
         this.enemyHealthMultiplier = enemyHealthMultiplier;
         this.enemyDamageMultiplier = enemyDamageMultiplier;
         this.playerDamageMultiplier = playerDamageMultiplier;
         this.worldPressureMultiplier = worldPressureMultiplier;
+        this.playerSpeedMultiplier = playerSpeedMultiplier;
     }
 
     public String getDisplayName() {
@@ -65,6 +70,10 @@ public enum Difficulty {
 
     public float getWorldPressureMultiplier() {
         return worldPressureMultiplier;
+    }
+
+    public float getPlayerSpeedMultiplier() {
+        return playerSpeedMultiplier;
     }
 
     @Override

@@ -1,12 +1,12 @@
+
 package game.boss.ancient;
 
 import game.boss.Boss;
+import game.save.Difficulty;
 
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -17,43 +17,133 @@ import java.util.function.Consumer;
 public class AncientAngelBoss extends Boss {
 
     private static final float MOVEMENT_RADIUS = 280f;
-    private static final double MOVEMENT_CHANGE_INTERVAL = 0.7;
-    private static final float MOVE_SPEED = 90f;
-
     private static final float PLAYER_SIZE = 40f;
 
-    private final float centerX;
-    private final float centerY;
-
-    private int speedDebuff = 0;
+    private static final float STREAM_PROJECTILE_MAX_DISTANCE = 3000f;
 
     private static final String SPRITE_PATH =
             "/assets/mobs/ancient_angel.png";
 
-    private final Image sprite =
-            loadRequiredImage(SPRITE_PATH);
+    private final Image sprite = loadRequiredImage(SPRITE_PATH);
+
+    private final float centerX;
+    private final float centerY;
+
+    private final Difficulty difficulty;
+    private final DifficultyProfile profile;
+
+    private int speedDebuff = 0;
 
     private float moveDirectionX;
     private float moveDirectionY;
 
     private double movementTimer;
-
-    private static final double PROJECTILE_INTERVAL = 0.2;
-    private static final float PROJECTILE_DAMAGE = 1f;
+    private double projectileTimer;
+    private double streamTimer;
 
     private final List<AncientAngelProjectile> projectiles =
             new ArrayList<>();
 
-    private double projectileTimer;
-
-    private static final double STREAM_INTERVAL = 6.0;
-
     private final AncientAngelRotatingStreamSystem rotatingStreamSystem =
             new AncientAngelRotatingStreamSystem();
 
-    private double streamTimer;
-
     private Consumer<Float> playerDamageListener;
+
+    /**
+     * Параметры поведения Ангела на выбранной сложности.
+     */
+    private static final class DifficultyProfile {
+
+        private final double movementChangeInterval;
+        private final float moveSpeed;
+
+        private final double projectileInterval;
+        private final float projectileDamage;
+
+        private final double streamInterval;
+        private final float streamLifetime;
+        private final float streamSpawnInterval;
+        private final float streamRotationSpeed;
+        private final float streamProjectileSpeed;
+        private final float streamProjectileDamage;
+        private final float streamSpreadAngle;
+
+        private DifficultyProfile(
+                double movementChangeInterval,
+                float moveSpeed,
+                double projectileInterval,
+                float projectileDamage,
+                double streamInterval,
+                float streamLifetime,
+                float streamSpawnInterval,
+                float streamRotationSpeed,
+                float streamProjectileSpeed,
+                float streamProjectileDamage,
+                float streamSpreadAngle
+        ) {
+            this.movementChangeInterval = movementChangeInterval;
+            this.moveSpeed = moveSpeed;
+            this.projectileInterval = projectileInterval;
+            this.projectileDamage = projectileDamage;
+            this.streamInterval = streamInterval;
+            this.streamLifetime = streamLifetime;
+            this.streamSpawnInterval = streamSpawnInterval;
+            this.streamRotationSpeed = streamRotationSpeed;
+            this.streamProjectileSpeed = streamProjectileSpeed;
+            this.streamProjectileDamage = streamProjectileDamage;
+            this.streamSpreadAngle = streamSpreadAngle;
+        }
+    }
+
+    private static DifficultyProfile profileFor(Difficulty difficulty) {
+        if (difficulty == null) {
+            difficulty = Difficulty.EXHAUSTING;
+        }
+
+        return switch (difficulty) {
+            case RELAXING -> new DifficultyProfile(
+                    1.2,
+                    65f,
+                    0.35,
+                    1f,
+                    9.0,
+                    4.0f,
+                    0.16f,
+                    (float) Math.toRadians(20),
+                    300f,
+                    1f,
+                    (float) Math.toRadians(8)
+            );
+
+            case EXHAUSTING -> new DifficultyProfile(
+                    0.7,
+                    90f,
+                    0.20,
+                    1.5f,
+                    6.0,
+                    5.0f,
+                    0.10f,
+                    (float) Math.toRadians(30),
+                    420f,
+                    1.5f,
+                    (float) Math.toRadians(5)
+            );
+
+            case DIVINE -> new DifficultyProfile(
+                    0.4,
+                    125f,
+                    0.12,
+                    2f,
+                    3.5,
+                    6.0f,
+                    0.06f,
+                    (float) Math.toRadians(50),
+                    540f,
+                    2f,
+                    (float) Math.toRadians(3)
+            );
+        };
+    }
 
     public AncientAngelBoss(
             float x,
@@ -63,6 +153,28 @@ public class AncientAngelBoss extends Boss {
             float maxHp,
             float centerX,
             float centerY
+    ) {
+        this(
+                x,
+                y,
+                width,
+                height,
+                maxHp,
+                centerX,
+                centerY,
+                Difficulty.EXHAUSTING
+        );
+    }
+
+    public AncientAngelBoss(
+            float x,
+            float y,
+            float width,
+            float height,
+            float maxHp,
+            float centerX,
+            float centerY,
+            Difficulty difficulty
     ) {
         super(
                 "ancient_angel",
@@ -76,6 +188,12 @@ public class AncientAngelBoss extends Boss {
 
         this.centerX = centerX;
         this.centerY = centerY;
+
+        this.difficulty = difficulty == null
+                ? Difficulty.EXHAUSTING
+                : difficulty;
+
+        this.profile = profileFor(this.difficulty);
 
         chooseNewMovementDirection();
 
@@ -96,15 +214,21 @@ public class AncientAngelBoss extends Boss {
 
         float delta = Math.max(0f, deltaSeconds);
 
+        updateMovement(delta);
+        updateNormalProjectiles(delta, playerX, playerY);
+        updateRotatingStreams(delta, playerX, playerY);
+    }
+
+    private void updateMovement(float delta) {
         movementTimer += delta;
 
-        if (movementTimer >= MOVEMENT_CHANGE_INTERVAL) {
-            movementTimer = 0.0;
+        while (movementTimer >= profile.movementChangeInterval) {
+            movementTimer -= profile.movementChangeInterval;
             chooseNewMovementDirection();
         }
 
         float effectiveMoveSpeed =
-                Math.max(0f, MOVE_SPEED + speedDebuff);
+                Math.max(0f, profile.moveSpeed + speedDebuff);
 
         float newX =
                 getX()
@@ -120,49 +244,59 @@ public class AncientAngelBoss extends Boss {
 
         setPosition(newX, newY);
 
-        float bossCenterX =
-                getX() + getWidth() / 2f;
-
-        float bossCenterY =
-                getY() + getHeight() / 2f;
+        float bossCenterX = getX() + getWidth() / 2f;
+        float bossCenterY = getY() + getHeight() / 2f;
 
         float dx = bossCenterX - centerX;
         float dy = bossCenterY - centerY;
 
-        double distance =
-                Math.sqrt(dx * dx + dy * dy);
+        double distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance > MOVEMENT_RADIUS
-                && distance > 0.0001) {
+        if (distance > MOVEMENT_RADIUS && distance > 0.0001) {
             moveDirectionX = -dx / (float) distance;
             moveDirectionY = -dy / (float) distance;
         }
+    }
 
+    private void updateNormalProjectiles(
+            float delta,
+            float playerX,
+            float playerY
+    ) {
         projectileTimer += delta;
 
-        while (projectileTimer >= PROJECTILE_INTERVAL) {
-            projectileTimer -= PROJECTILE_INTERVAL;
+        while (projectileTimer >= profile.projectileInterval) {
+            projectileTimer -= profile.projectileInterval;
             spawnProjectile();
         }
 
-        updateProjectiles(
-                delta,
-                playerX,
-                playerY
-        );
+        updateProjectiles(delta, playerX, playerY);
+    }
 
+    private void updateRotatingStreams(
+            float delta,
+            float playerX,
+            float playerY
+    ) {
         streamTimer += delta;
 
-        if (streamTimer >= STREAM_INTERVAL) {
-            streamTimer -= STREAM_INTERVAL;
-            rotatingStreamSystem.spawn(0f);
+        while (streamTimer >= profile.streamInterval) {
+            streamTimer -= profile.streamInterval;
+
+            rotatingStreamSystem.spawn(
+                    0f,
+                    profile.streamLifetime,
+                    profile.streamSpawnInterval,
+                    profile.streamRotationSpeed,
+                    profile.streamProjectileSpeed,
+                    profile.streamProjectileDamage,
+                    STREAM_PROJECTILE_MAX_DISTANCE,
+                    profile.streamSpreadAngle
+            );
         }
 
-        float bossOriginX =
-                getX() + getWidth() / 2f;
-
-        float bossOriginY =
-                getY() + getHeight() / 2f;
+        float bossOriginX = getX() + getWidth() / 2f;
+        float bossOriginY = getY() + getHeight() / 2f;
 
         rotatingStreamSystem.update(
                 delta,
@@ -176,23 +310,26 @@ public class AncientAngelBoss extends Boss {
     }
 
     public void setSpeedDebuff(int speedDebuff) {
-        this.speedDebuff = Math.max(-48, Math.min(0, speedDebuff));
+        this.speedDebuff = Math.max(
+                -48,
+                Math.min(0, speedDebuff)
+        );
     }
 
     public int getSpeedDebuff() {
         return speedDebuff;
     }
 
+    public Difficulty getDifficulty() {
+        return difficulty;
+    }
+
     private void spawnProjectile() {
-        float spawnX =
-                getX() + getWidth() / 2f;
+        float spawnX = getX() + getWidth() / 2f;
+        float spawnY = getY() + getHeight() / 2f;
 
-        float spawnY =
-                getY() + getHeight() / 2f;
-
-        double angle =
-                ThreadLocalRandom.current()
-                        .nextDouble(0, Math.PI * 2);
+        double angle = ThreadLocalRandom.current()
+                .nextDouble(0, Math.PI * 2);
 
         float directionX = (float) Math.cos(angle);
         float directionY = (float) Math.sin(angle);
@@ -203,7 +340,7 @@ public class AncientAngelBoss extends Boss {
                         spawnY,
                         directionX,
                         directionY,
-                        PROJECTILE_DAMAGE
+                        profile.projectileDamage
                 );
 
         projectiles.add(projectile);
@@ -214,9 +351,6 @@ public class AncientAngelBoss extends Boss {
             float playerX,
             float playerY
     ) {
-        float playerWidth = PLAYER_SIZE;
-        float playerHeight = PLAYER_SIZE;
-
         Iterator<AncientAngelProjectile> iterator =
                 projectiles.iterator();
 
@@ -236,9 +370,9 @@ public class AncientAngelBoss extends Boss {
 
             boolean hit =
                     projectileX + radius >= playerX
-                            && projectileX - radius <= playerX + playerWidth
+                            && projectileX - radius <= playerX + PLAYER_SIZE
                             && projectileY + radius >= playerY
-                            && projectileY - radius <= playerY + playerHeight;
+                            && projectileY - radius <= playerY + PLAYER_SIZE;
 
             if (hit) {
                 damagePlayer(projectile.getDamage());
@@ -249,9 +383,8 @@ public class AncientAngelBoss extends Boss {
     }
 
     private void chooseNewMovementDirection() {
-        double angle =
-                ThreadLocalRandom.current()
-                        .nextDouble(0, Math.PI * 2);
+        double angle = ThreadLocalRandom.current()
+                .nextDouble(0, Math.PI * 2);
 
         moveDirectionX = (float) Math.cos(angle);
         moveDirectionY = (float) Math.sin(angle);
@@ -295,9 +428,7 @@ public class AncientAngelBoss extends Boss {
         movementTimer = 0.0;
         streamTimer = 0.0;
 
-        System.out.println(
-                "ANCIENT ANGEL DEFEATED"
-        );
+        System.out.println("ANCIENT ANGEL DEFEATED");
     }
 
     public void setPlayerDamageListener(
@@ -321,7 +452,6 @@ public class AncientAngelBoss extends Boss {
         }
 
         gc.save();
-
         gc.setImageSmoothing(false);
 
         gc.drawImage(
@@ -334,7 +464,6 @@ public class AncientAngelBoss extends Boss {
 
         renderProjectiles(gc);
         renderRotatingStreams(gc);
-
 
         gc.restore();
     }
@@ -389,7 +518,9 @@ public class AncientAngelBoss extends Boss {
                 continue;
             }
 
-            for (var projectile : stream.getProjectiles()) {
+            for (AncientAngelStreamProjectile projectile :
+                    stream.getProjectiles()) {
+
                 if (projectile == null || projectile.isFinished()) {
                     continue;
                 }
@@ -408,8 +539,6 @@ public class AncientAngelBoss extends Boss {
             }
         }
     }
-
-
 
     private static Image loadRequiredImage(String resourcePath) {
         var stream = AncientAngelBoss.class

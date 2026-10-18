@@ -7,66 +7,63 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class AncientAngelRotatingStream {
 
-    /*
-     * Как долго Ангел испускает поток.
-     */
-    private static final float LIFETIME = 400.0f;
-
-    /*
-     * Интервал между выстрелами.
-     */
-    private static final float SPAWN_INTERVAL = 0.1f;
-
-    /*
-     * Скорость вращения направления потока.
-     */
-    private static final float ROTATION_SPEED =
+    private static final float DEFAULT_LIFETIME = 400.0f;
+    private static final float DEFAULT_SPAWN_INTERVAL = 0.1f;
+    private static final float DEFAULT_ROTATION_SPEED =
             (float) Math.toRadians(30.0);
-
-    /*
-     * Скорость синих снарядов.
-     */
-    private static final float PROJECTILE_SPEED = 420f;
-
-    private static final float PROJECTILE_DAMAGE = 1f;
-
-    /*
-     * Максимальная дальность снаряда.
-     */
-    private static final float PROJECTILE_MAX_DISTANCE = 3000f;
-
-    /*
-     * Максимальный разброс относительно
-     * текущего направления потока.
-     *
-     * 5 градусов — небольшой разброс.
-     */
-    private static final float SPREAD_ANGLE =
+    private static final float DEFAULT_PROJECTILE_SPEED = 420f;
+    private static final float DEFAULT_PROJECTILE_DAMAGE = 1f;
+    private static final float DEFAULT_PROJECTILE_MAX_DISTANCE = 3000f;
+    private static final float DEFAULT_SPREAD_ANGLE =
             (float) Math.toRadians(5.0);
 
-    /*
-     * Текущее направление, в котором будет
-     * выпущен СЛЕДУЮЩИЙ снаряд.
-     */
-    private float angle;
+    private final float lifetime;
+    private final float spawnInterval;
+    private final float rotationSpeed;
+    private final float projectileSpeed;
+    private final float projectileDamage;
+    private final float projectileMaxDistance;
+    private final float spreadAngle;
 
+    private float angle;
     private float elapsed;
     private float spawnTimer;
-
     private boolean finished;
 
     private final List<AncientAngelStreamProjectile> projectiles =
             new ArrayList<>();
 
+    public AncientAngelRotatingStream(float initialAngle) {
+        this(
+                initialAngle,
+                DEFAULT_LIFETIME,
+                DEFAULT_SPAWN_INTERVAL,
+                DEFAULT_ROTATION_SPEED,
+                DEFAULT_PROJECTILE_SPEED,
+                DEFAULT_PROJECTILE_DAMAGE,
+                DEFAULT_PROJECTILE_MAX_DISTANCE,
+                DEFAULT_SPREAD_ANGLE
+        );
+    }
+
     public AncientAngelRotatingStream(
-            float initialAngle
+            float initialAngle,
+            float lifetime,
+            float spawnInterval,
+            float rotationSpeed,
+            float projectileSpeed,
+            float projectileDamage,
+            float projectileMaxDistance,
+            float spreadAngle
     ) {
         this.angle = initialAngle;
-
-        this.elapsed = 0f;
-        this.spawnTimer = 0f;
-
-        this.finished = false;
+        this.lifetime = Math.max(0.01f, lifetime);
+        this.spawnInterval = Math.max(0.01f, spawnInterval);
+        this.rotationSpeed = rotationSpeed;
+        this.projectileSpeed = projectileSpeed;
+        this.projectileDamage = projectileDamage;
+        this.projectileMaxDistance = projectileMaxDistance;
+        this.spreadAngle = Math.max(0f, spreadAngle);
     }
 
     public void update(
@@ -86,11 +83,10 @@ public class AncientAngelRotatingStream {
             elapsed += delta;
             spawnTimer += delta;
 
-            angle += ROTATION_SPEED * delta;
+            angle += rotationSpeed * delta;
 
-            while (spawnTimer >= SPAWN_INTERVAL) {
-
-                spawnTimer -= SPAWN_INTERVAL;
+            while (spawnTimer >= spawnInterval) {
+                spawnTimer -= spawnInterval;
 
                 spawnProjectile(
                         currentOriginX,
@@ -98,9 +94,8 @@ public class AncientAngelRotatingStream {
                 );
             }
 
-            if (elapsed >= LIFETIME) {
-
-                elapsed = LIFETIME;
+            if (elapsed >= lifetime) {
+                elapsed = lifetime;
                 finished = true;
             }
         }
@@ -142,19 +137,12 @@ public class AncientAngelRotatingStream {
          */
         float spread =
                 (float) ThreadLocalRandom.current()
-                        .nextDouble(
-                                -SPREAD_ANGLE,
-                                SPREAD_ANGLE
-                        );
+                        .nextDouble(-spreadAngle, spreadAngle);
 
-        float projectileAngle =
-                angle + spread;
+        float projectileAngle = angle + spread;
 
-        float directionX =
-                (float) Math.cos(projectileAngle);
-
-        float directionY =
-                (float) Math.sin(projectileAngle);
+        float directionX = (float) Math.cos(projectileAngle);
+        float directionY = (float) Math.sin(projectileAngle);
 
         AncientAngelStreamProjectile projectile =
                 new AncientAngelStreamProjectile(
@@ -162,9 +150,9 @@ public class AncientAngelRotatingStream {
                         originY,
                         directionX,
                         directionY,
-                        PROJECTILE_SPEED,
-                        PROJECTILE_MAX_DISTANCE,
-                        PROJECTILE_DAMAGE
+                        projectileSpeed,
+                        projectileMaxDistance,
+                        projectileDamage
                 );
 
         projectiles.add(projectile);

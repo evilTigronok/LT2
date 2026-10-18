@@ -10,6 +10,7 @@ import game.combat.*;
 
 import game.player.PlayerSkillLoadout;
 import game.save.Difficulty;
+import game.save.DifficultySettings;
 import game.save.SaveData;
 import game.save.SaveManager;
 import game.weapon.WeaponFactory;
@@ -91,8 +92,7 @@ public class WorldScene {
 
     private static final float TRAINING_DUMMY_SIZE = 40f;
 
-    private final LocalCombatSystem combatSystem =
-            new LocalCombatSystem();
+    private final LocalCombatSystem combatSystem;
 
     private final Difficulty difficulty;
 
@@ -242,6 +242,9 @@ public class WorldScene {
 
     private static final String PLAYER_SPRITE_PATH =
             "/assets/avatar/generated/character_walk_2.png";
+
+    private int locationX = 0;
+    private int locationY = 0;
 
     /*
      * Один spritesheet содержит 8 направлений.
@@ -445,6 +448,8 @@ public class WorldScene {
                 difficulty == null
                         ? Difficulty.EXHAUSTING
                         : difficulty;
+
+        this.combatSystem = new LocalCombatSystem(this.difficulty);
 
         this.achievementManager =
                 new AchievementManager(
@@ -3076,44 +3081,21 @@ public class WorldScene {
         return 1.0 / attackSpeed;
     }
 
-    private void damageLocalPlayer(
-            float damage
-    ) {
-
-        if (damage <= 0) {
+    private void damageLocalPlayer(float damage) {
+        if (damage <= 0 || playerHp <= 0) {
             return;
         }
 
-        /*
-         * Если игрок уже мёртв,
-         * дополнительный урон не принимаем.
-         */
-        if (playerHp <= 0) {
-            return;
-        }
+        damage = DifficultySettings.enemyDamage(
+                difficulty,
+                damage
+        );
 
-        playerHp =
-                Math.max(
-                        0,
-                        playerHp - damage
-                );
+        playerHp = Math.max(0, playerHp - damage);
 
         updatePlayerHud();
 
-        System.out.println(
-                "ANCIENT ANGEL HIT PLAYER: -"
-                        + damage
-        );
-
-        /*
-         * Игрок погиб.
-         */
         if (playerHp <= 0) {
-
-            System.out.println(
-                    "PLAYER DIED"
-            );
-
             respawnPlayerAtStart();
         }
     }
@@ -3258,15 +3240,20 @@ public class WorldScene {
         /*
          * Перемещение.
          */
+
+        double movementSpeed =
+                DifficultySettings.playerSpeed(
+                        difficulty,
+                        LOCAL_PLAYER_SPEED
+                );
+
         localPlayer.serverX +=
-                dx
-                        * LOCAL_PLAYER_SPEED
-                        * deltaSeconds;
+                dx * movementSpeed * deltaSeconds;
 
         localPlayer.serverY +=
-                dy
-                        * LOCAL_PLAYER_SPEED
-                        * deltaSeconds;
+                dy * movementSpeed * deltaSeconds;
+
+
 
         /*
          * Ограничиваем игрока границами
@@ -5983,7 +5970,8 @@ public class WorldScene {
         DungeonBossRegistry.register(
                 bossManager,
                 combatSystem,
-                this::damageLocalPlayer
+                this::damageLocalPlayer,
+                difficulty
         );
 
         /*

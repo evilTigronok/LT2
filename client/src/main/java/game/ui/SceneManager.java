@@ -23,6 +23,8 @@ public class SceneManager {
 
     private WorldScene currentWorldScene;
 
+    private String username;
+
     public SceneManager(
             Stage stage,
             NetworkClient client
@@ -73,6 +75,10 @@ public class SceneManager {
 
     public Stage getStage() {
         return stage;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     // =====================================
@@ -146,7 +152,9 @@ public class SceneManager {
                 currentWorldScene = new WorldScene(
                         this,
                         client,
-                        username
+                        username,
+                        pendingSave,
+                        pendingDifficulty
                 );
 
                 client.setWorldScene(currentWorldScene);
