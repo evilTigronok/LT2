@@ -111,8 +111,7 @@ public class WorldScene {
 
     private final WeaponLoadoutStorage weaponLoadoutStorage;
 
-    private final RangedProjectileSystem rangedProjectileSystem =
-            new RangedProjectileSystem(combatSystem);
+    private final RangedProjectileSystem rangedProjectileSystem;
 
     private static final float PLAYER_ATTACK = 5f;
 
@@ -450,6 +449,9 @@ public class WorldScene {
                         : difficulty;
 
         this.combatSystem = new LocalCombatSystem(this.difficulty);
+
+        this.rangedProjectileSystem =
+                new RangedProjectileSystem(this.combatSystem);
 
         this.achievementManager =
                 new AchievementManager(
