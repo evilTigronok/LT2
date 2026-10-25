@@ -5,6 +5,9 @@ import game.weapon.Weapon;
 import java.util.*;
 import java.util.function.Consumer;
 
+import static game.combat.AngelicDoomMode.LUNAR;
+import static game.combat.AngelicDoomMode.SOLAR;
+
 public class RangedProjectileSystem {
 
     @FunctionalInterface
@@ -45,6 +48,10 @@ public class RangedProjectileSystem {
     private final List<RangedProjectile> projectiles =
             new ArrayList<>();
 
+    // Отдельно отмечаем снаряды, которые являются летящими копьями.
+    private final Set<RangedProjectile> spearProjectiles =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+
     private final List<PendingBurst> pendingBursts =
             new ArrayList<>();
 
@@ -76,6 +83,11 @@ public class RangedProjectileSystem {
        сначала пересёк цель, а затем завершил полёт. */
     private final Set<RangedProjectile> mourningDustDetonated =
             Collections.newSetFromMap(new IdentityHashMap<>());
+
+    // Модификаторы артефактов дальнего боя, задаваемые WorldScene.
+    private float artifactRangedDamageMultiplier = 1.0f;
+    private float artifactSpreadRadians = 0.0f;
+    private boolean artifactHomingEnabled = false;
 
     private float lastMourningLandingX;
     private float lastMourningLandingY;
@@ -113,8 +125,17 @@ public class RangedProjectileSystem {
         this.directionProvider = directionProvider;
     }
 
+    public void setArtifactModifiers(float damageMultiplier, float spreadRadians, boolean homingEnabled) {
+        artifactRangedDamageMultiplier = Math.max(0.05f, damageMultiplier);
+        artifactSpreadRadians = Math.max(0f, spreadRadians);
+        artifactHomingEnabled = homingEnabled;
+    }
+
     public Collection<RangedProjectile> getProjectiles() {
         return projectiles;
+    }
+    public boolean isSpearProjectile(RangedProjectile projectile) {
+        return spearProjectiles.contains(projectile);
     }
 
     /*
@@ -160,6 +181,7 @@ public class RangedProjectileSystem {
                         weapon,
                         playerAttack
                 );
+        damage *= artifactRangedDamageMultiplier;
 
         int projectileCount =
                 Math.max(
@@ -173,12 +195,12 @@ public class RangedProjectileSystem {
         float projectileRange =
                 attack.getProjectileRange();
 
-        boolean piercing =
-                attack.isPiercing();
+        boolean piercing = attack.isPiercing();
 
-        /*
-         * Обычный projectile получает mode = null.
-         */
+        DamageType damageType = attack.getDamageParts().isEmpty()
+                ? DamageType.PHYSICAL
+                : attack.getDamageParts().get(0).getType();
+
         spawnProjectile(
                 originX,
                 originY,
@@ -189,34 +211,95 @@ public class RangedProjectileSystem {
                 projectileRange,
                 piercing,
                 null,
-                attack.getDamageParts().get(0).getType(),
+                damageType,
                 attack.getDefenseIgnore()
         );
 
-        /*
-         * Остальные выстрелы.
-         */
         if (projectileCount > 1) {
-
-            PendingBurst burst =
-                    new PendingBurst(
-                            originX,
-                            originY,
-                            directionX,
-                            directionY,
-                            damage,
-                            projectileSpeed,
-                            projectileRange,
-                            piercing,
-                            projectileCount - 1,
-                            null,
-                            attack.getDamageParts().get(0).getType(),
-                            attack.getDefenseIgnore()
-                    );
+            PendingBurst burst = new PendingBurst(
+                    originX,
+                    originY,
+                    directionX,
+                    directionY,
+                    damage,
+                    projectileSpeed,
+                    projectileRange,
+                    piercing,
+                    projectileCount - 1,
+                    null,
+                    damageType,
+                    attack.getDefenseIgnore()
+            );
 
             pendingBursts.add(burst);
         }
 
+        return true;
+    }
+
+    public boolean fireSpear(
+            float originX,
+            float originY,
+            float directionX,
+            float directionY,
+            Weapon spear,
+            float playerAttack,
+            boolean gungnirBonus
+    ) {
+        if (spear == null
+                || spear.getType() != game.weapon.WeaponType.MELEE
+                || spear.getAttackStyle() != game.weapon.AttackStyle.THRUST) {
+            return false;
+        }
+
+        AttackDefinition attack = spear.getPrimaryAttack();
+        if (attack == null) {
+            return false;
+        }
+
+        // Урон рассчитывается по самому копью.
+        float damage = DamageCalculator.calculateTickDamage(
+                spear,
+                playerAttack
+        );
+        System.out.println(
+                "SPEAR PROJECTILE DAMAGE: "
+                        + damage
+                        + ", source=" + spear.getName()
+                        + ", playerAttack=" + playerAttack
+        );
+
+        float speed = 620f;
+        float range = 520f;
+
+        // Если экипировано само копьё «Гунгнир».
+        if (gungnirBonus) {
+            damage *= 1.5f;
+            speed *= 2.2f;
+            range *= 2.0f;
+        }
+
+        DamageType damageType =
+                attack.getDamageParts() == null
+                        || attack.getDamageParts().isEmpty()
+                        ? DamageType.PHYSICAL
+                        : attack.getDamageParts().get(0).getType();
+
+        RangedProjectile projectile = spawnProjectile(
+                originX,
+                originY,
+                directionX,
+                directionY,
+                damage,
+                speed,
+                range,
+                gungnirBonus,
+                null,
+                damageType,
+                attack.getDefenseIgnore()
+        );
+
+        spearProjectiles.add(projectile);
         return true;
     }
 
@@ -237,6 +320,7 @@ public class RangedProjectileSystem {
         float damage = DamageCalculator.calculateTickDamage(
                 attack, playerAttack, weapon.getAttack()
         );
+        damage *= artifactRangedDamageMultiplier;
 
         int projectileCount = Math.max(1, attack.getProjectileCount());
 
@@ -258,6 +342,7 @@ public class RangedProjectileSystem {
         }
         return true;
     }
+
 
     /** Специальная атака оружия «Траур». */
     public boolean fireMourning(
@@ -375,11 +460,22 @@ public class RangedProjectileSystem {
                 attack.getProjectileRange();
 
         boolean piercing =
-                mode == AngelicDoomMode.SOLAR
+                mode == SOLAR
                         && attack.isPiercing();
 
         /*
          * Только mode-aware атака получает режим.
+         */
+        /*
+         * Тип урона зависит от режима Ангельской погибели.
+         */
+        DamageType damageType = switch (mode) {
+            case SOLAR -> DamageType.FIRE;
+            case LUNAR -> DamageType.ICE;
+        };
+
+        /*
+         * Основной снаряд.
          */
         spawnProjectile(
                 originX,
@@ -391,30 +487,34 @@ public class RangedProjectileSystem {
                 projectileRange,
                 piercing,
                 mode,
-                attack.getDamageParts().get(0).getType(),
+                damageType,
                 attack.getDefenseIgnore()
         );
 
+        /*
+         * Дополнительные снаряды очереди
+         * должны сохранять тот же тип урона.
+         */
         if (projectileCount > 1) {
-
-            PendingBurst burst =
-                    new PendingBurst(
-                            originX,
-                            originY,
-                            directionX,
-                            directionY,
-                            damage,
-                            projectileSpeed,
-                            projectileRange,
-                            piercing,
-                            projectileCount - 1,
-                            mode,
-                            attack.getDamageParts().get(0).getType(),
-                            attack.getDefenseIgnore()
-                    );
+            PendingBurst burst = new PendingBurst(
+                    originX,
+                    originY,
+                    directionX,
+                    directionY,
+                    damage,
+                    projectileSpeed,
+                    projectileRange,
+                    piercing,
+                    projectileCount - 1,
+                    mode,
+                    damageType,
+                    attack.getDefenseIgnore()
+            );
 
             pendingBursts.add(burst);
         }
+
+
 
         return true;
     }
@@ -571,6 +671,7 @@ public class RangedProjectileSystem {
                 projectiles.remove(
                         projectile
                 );
+                spearProjectiles.remove(projectile);
                 projectileModes.remove(
                         projectile
                 );
@@ -590,12 +691,36 @@ public class RangedProjectileSystem {
                 projectiles.remove(
                         projectile
                 );
+                spearProjectiles.remove(projectile);
 
                 projectileModes.remove(
                         projectile
                 );
 
                 continue;
+            }
+
+            if (artifactHomingEnabled && projectile.getDamageType() != DamageType.DUST) {
+                LocalCombatTarget nearest = null;
+                float bestDistanceSquared = Float.MAX_VALUE;
+                for (LocalCombatTarget target : combatSystem.getTargets()) {
+                    if (target == null || !target.isAlive()) continue;
+                    if (projectile.hasHitTarget(target.getId())) continue;
+                    float dx = target.getX() + target.getWidth() / 2f - projectile.getX();
+                    float dy = target.getY() + target.getHeight() / 2f - projectile.getY();
+                    float distanceSquared = dx * dx + dy * dy;
+                    if (distanceSquared < bestDistanceSquared) {
+                        bestDistanceSquared = distanceSquared;
+                        nearest = target;
+                    }
+                }
+                if (nearest != null) {
+                    projectile.steerToward(
+                            nearest.getX() + nearest.getWidth() / 2f,
+                            nearest.getY() + nearest.getHeight() / 2f,
+                            (float) Math.toRadians(110.0) * delta
+                    );
+                }
             }
 
             projectile.update(
@@ -619,6 +744,7 @@ public class RangedProjectileSystem {
                 projectiles.remove(
                         projectile
                 );
+                spearProjectiles.remove(projectile);
                 projectileModes.remove(
                         projectile
                 );
@@ -644,6 +770,13 @@ public class RangedProjectileSystem {
             DamageType damageType,
             float defenseIgnore
     ) {
+
+        if (artifactSpreadRadians > 0f && damageType != DamageType.DUST) {
+            double angle = Math.atan2(directionY, directionX)
+                    + (Math.random() * 2.0 - 1.0) * artifactSpreadRadians;
+            directionX = (float) Math.cos(angle);
+            directionY = (float) Math.sin(angle);
+        }
 
         RangedProjectile projectile =
                 new RangedProjectile(
@@ -784,14 +917,17 @@ public class RangedProjectileSystem {
                                 + target.getHeight()
                                 / 2f;
 
+
                 hitListener.accept(
                         new LocalCombatHit(
                                 targetId,
                                 hitX,
                                 hitY,
-                                damage
+                                damage,
+                                projectile.getDamageType()
                         )
                 );
+
             }
 
             /*
@@ -811,7 +947,7 @@ public class RangedProjectileSystem {
              * LUNAR
              *     -> только Lunar-эффект
              */
-            if (mode == AngelicDoomMode.SOLAR) {
+            if (mode == SOLAR) {
                 System.out.println(
                         "SOLAR EFFECT TRIGGERED"
                 );
@@ -846,11 +982,12 @@ public class RangedProjectileSystem {
                         hitX,
                         hitY,
                         SOLAR_AOE_RADIUS,
-                        damage * 0.15f
+                        damage * 0.15f,
+                        DamageType.FIRE
                 );
             }
 
-            if (mode == AngelicDoomMode.LUNAR) {
+            if (mode == LUNAR) {
 
                 /*
                  * Lunar:
@@ -935,7 +1072,8 @@ public class RangedProjectileSystem {
                             areaTarget.getId(),
                             targetCenterX,
                             targetCenterY,
-                            damage
+                            damage,
+                            DamageType.DUST
                     ));
                 }
             }
@@ -1040,12 +1178,17 @@ public class RangedProjectileSystem {
                 target.damage(arc.getDamage());
 
                 if (hitListener != null) {
-                    hitListener.accept(new LocalCombatHit(
-                            target.getId(),
-                            hitX,
-                            hitY,
-                            arc.getDamage()
-                    ));
+
+                    hitListener.accept(
+                            new LocalCombatHit(
+                                    target.getId(),
+                                    hitX,
+                                    hitY,
+                                    arc.getDamage(),
+                                    DamageType.ELECTRIC
+                            )
+                    );
+
                 }
             }
         }
@@ -1161,6 +1304,7 @@ public class RangedProjectileSystem {
         projectiles.clear();
         pendingBursts.clear();
         projectileModes.clear();
+        spearProjectiles.clear();
         solarExplosions.clear();
         starExplosions.clear();
         mourningLightningArcs.clear();

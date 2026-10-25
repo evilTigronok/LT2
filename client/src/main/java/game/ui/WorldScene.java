@@ -13,7 +13,7 @@ import game.save.Difficulty;
 import game.save.DifficultySettings;
 import game.save.SaveData;
 import game.save.SaveManager;
-import game.weapon.WeaponFactory;
+import game.weapon.*;
 import game.world.location.Location;
 import game.world.location.Portal;
 import game.avatar.Direction;
@@ -22,12 +22,9 @@ import game.network.dto.PlayerState;
 import game.network.packets.WorldStatePacket;
 import game.ui.world.RemotePlayer;
 import game.ui.world.WorldObject;
-import game.weapon.AttackStyle;
-import game.weapon.Weapon;
-import game.weapon.WeaponType;
-import game.weapon.WeaponSpecial;
 import game.combat.AttackDefinition;
 import game.inventory.Inventory;
+import game.inventory.Artifact;
 import game.item.AbilityDefinition;
 import game.item.ItemQuality;
 import game.world.data.PlacedObjectData;
@@ -35,6 +32,7 @@ import game.world.data.WorldData;
 import game.world.objects.ObjectDefinition;
 import game.world.objects.ObjectRegistry;
 import javafx.animation.AnimationTimer;
+import javafx.scene.control.ScrollPane;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.scene.Parent;
@@ -152,6 +150,14 @@ public class WorldScene {
     private boolean secondaryAttackHeld = false;
     private double secondaryAttackTimer = 0.0;
 
+    private SwordSwing spearComboThrust;
+    private boolean spearFollowupRequested = false;
+    private double spearFollowupTimer = 0.0;
+
+    private static final double SPEAR_FOLLOWUP_DELAY = 0.18;
+
+    private Weapon spearComboWeapon;
+
     /* Специальные состояния оружия. */
     private int mourningStacks = 0;
     private double mourningStackTimer = 0.0;
@@ -168,6 +174,16 @@ public class WorldScene {
     private static final double DOOM_STAR_CHARGE_TIME = 16.0;
 
     private double attackCooldown = 0.0;
+    private int dawnComboIndex = 0;
+
+    private static final double DAWN_COMBO_INTERVAL = 0.4;
+    private static final double DAWN_FINISHER_DELAY = 1.2;
+    private static final double DAWN_FINISHER_COOLDOWN = 9.0;
+
+    private static final float[] DAWN_COMBO_MULTIPLIERS = {
+            0.40f, 0.60f, 0.80f, 1.10f, 2.00f
+    };
+
 
     private final WeaponTrickSystem weaponTrickSystem =
             new WeaponTrickSystem();
@@ -180,6 +196,13 @@ public class WorldScene {
     private float gungnirDrillDirectionY = 0f;
 
     private boolean gungnirDrillActive = false;
+
+    private double tinWallRamTimer = 0.0;
+    private double tinWallRamCooldown = 0.0;
+    private double tinWallArcAngle = Math.PI;
+    private final java.util.Set<String> tinWallRamHitTargets = new java.util.HashSet<>();
+    private final java.util.Map<String, Long> tinWallLastContactHitNanos = new java.util.HashMap<>();
+    private double tinWallPreviousAimAngle = Double.NaN;
 
     private boolean projectileInvulnerability = false;
 
@@ -224,8 +247,23 @@ public class WorldScene {
      * =====================================================
      */
 
-    private static final double PLAYER_SIZE =
-            40;
+    private static final double PLAYER_SIZE = 40.0;
+
+    // Визуальный размер персонажа увеличен в 2 раза.
+    private static final double PLAYER_VISUAL_SIZE = 40.0;
+
+    private boolean oneHpMode = false;
+    private boolean hardcoreMode = false;
+
+    // Время для анимации ходьбы и покоя.
+    private double playerAnimationTime = 0.0;
+
+    private double glitchAnimationTime = 0.0;
+
+    // Оставшееся время анимации атаки.
+    private double attackAnimationTimer = 0.0;
+
+    private static final double ATTACK_ANIMATION_DURATION = 0.28;
 
     /*
      * =====================================================
@@ -250,6 +288,11 @@ public class WorldScene {
      */
     private final Image playerSpriteSheet =
             loadPlayerSpriteSheet();
+
+    private Image gungnirProjectileImage;
+
+    private final WeaponSpriteManager weaponSpriteManager =
+            new WeaponSpriteManager();
 
     /*
      * =====================================================
@@ -301,6 +344,41 @@ public class WorldScene {
     //temp
     private float playerHp = 100f;
     private float playerMaxHp = 100f;
+    // Бонус максимального ХП от экипированных артефактов, уже применённый к игроку.
+    private int appliedArtifactHpBonus = 0;
+    // Эфирная кукла: время следующего допустимого срабатывания в наносекундах.
+    private long etherealDollReadyAtNanos = 0L;
+    private long etherealPhantomUntilNanos = 0L;
+    private float etherealPhantomX = 0f;
+    private float etherealPhantomY = 0f;
+    private boolean driedHeartTriggered = false;
+    private double driedHeartRegenTimer = 0.0;
+    private long parryActiveUntilNanos = 0L;
+    private long parryCooldownUntilNanos = 0L;
+    private boolean ancientsShieldPlaced = false;
+    private double ancientsShieldX = 0.0;
+    private double ancientsShieldY = 0.0;
+    private double mechanicalSquireAngle = 0.0;
+    private double mechanicalSquireTickTimer = 0.0;
+    private final Map<String, Long> mechanicalSquireLastHitNanos = new HashMap<>();
+    private final List<CurseProjectile> curseProjectiles = new ArrayList<>();
+    private double curseProjectileSpawnTimer = 3.0;
+    private int curseDefenseStacks = 0;
+    private int curseSpeedStacks = 0;
+    private int curseDamageStacks = 0;
+    private long curseDefenseUntilNanos = 0L;
+    private long curseSpeedUntilNanos = 0L;
+    private long curseDamageUntilNanos = 0L;
+    private final Map<KeyCode, Long> cyberBootsLastTapNanos = new EnumMap<>(KeyCode.class);
+    private long cyberBootsCooldownUntilNanos = 0L;
+    private float cyberDashDirectionX = 0f;
+    private float cyberDashDirectionY = 0f;
+    private double cyberDashDistanceRemaining = 0.0;
+    private long continuumDashCooldownUntilNanos = 0L;
+    private float continuumDashDirectionX = 0f;
+    private float continuumDashDirectionY = 0f;
+    private double continuumDashDistanceRemaining = 0.0;
+    private final Set<String> continuumDashHitTargets = new HashSet<>();
 
     private final VBox playerHud =
             new VBox(5);
@@ -324,6 +402,8 @@ public class WorldScene {
 
     private final GridPane inventoryGrid =
             new GridPane();
+
+    private final StackPane[] artifactSlotNodes = new StackPane[4];
 
     private final VBox itemDetails =
             new VBox(8);
@@ -437,11 +517,26 @@ public class WorldScene {
             NetworkClient client,
             String username,
             SaveData saveData,
-            Difficulty difficulty
+            Difficulty difficulty,
+            int saveSlot,
+            boolean oneHpMode,
+            boolean hardcoreMode
     ) {
 
         this.client = client;
         this.username = username;
+
+        this.oneHpMode = saveData != null
+                ? saveData.player.oneHpMode
+                : oneHpMode;
+
+        this.hardcoreMode = saveData != null
+                ? saveData.player.hardcoreMode
+                : hardcoreMode;
+
+        this.saveSlot = saveData != null
+                ? saveData.slot
+                : Math.max(1, Math.min(3, saveSlot));
 
         this.difficulty =
                 difficulty == null
@@ -459,9 +554,7 @@ public class WorldScene {
                 );
 
         this.weaponLoadoutStorage =
-                new WeaponLoadoutStorage(
-                        username
-                );
+                new WeaponLoadoutStorage(username, this.saveSlot);
 
         this.sceneManager =
                 sceneManager;
@@ -544,20 +637,23 @@ public class WorldScene {
             achievementManager.unlock(
                     "first_save"
             );
+            // Для тестирования весь каталог оружия доступен сразу,
+            // но оба слота экипировки остаются пустыми.
+            addAllWeaponsToInventory();
+
+            // Стартовый набор артефактов.
+            for (Artifact artifact : Artifact.all()) {
+                inventory.addArtifact(artifact);
+            }
         }
 
-        //temp
+        // Манекены всегда располагаются в основном мире,
+        // независимо от локации, в которой загружено сохранение.
         float dummyX =
-                (float) (
-                        worldWidth / 2.0 -
-                                TRAINING_DUMMY_SIZE / 2.0
-                );
+                5000f - TRAINING_DUMMY_SIZE / 2f;
 
         float dummyY =
-                (float) (
-                        worldHeight / 2.0 +
-                                40.0
-                );
+                5040f;
 
         trainingDummy =
                 new LocalCombatTarget(
@@ -614,37 +710,13 @@ public class WorldScene {
         });
 
         /*
-         * Начальное оружие.
+         * Новая игра начинается без оружия.
+         * Оружие появляется в инвентаре только после получения игроком,
+         * а слоты экипировки остаются пустыми до ручного экипирования.
+         * Сохранённая кампания восстанавливает инвентарь и слоты через applySave().
          */
-        Weapon claymore =
-                WeaponFactory.createWeightedClaymore();
-
-        Weapon angelicDoom =
-                WeaponFactory.createAngelicDoom();
-
-        inventory.addWeapon(claymore);
-        inventory.addWeapon(angelicDoom);
-        inventory.addWeapon(WeaponFactory.createGungnir());
-        inventory.addWeapon(WeaponFactory.createReliableSpear());
-        inventory.addWeapon(WeaponFactory.createGungnirLauncher());
-        inventory.addWeapon(WeaponFactory.createMourning());
-        inventory.addWeapon(WeaponFactory.createIceShooter());
-        inventory.addWeapon(WeaponFactory.createDoomStarShooter());
-
         doomStarCharged = true;
-
-        /*
-         * Восстанавливаем ведущие слоты ПОСЛЕ добавления всего оружия.
-         * Inventory автоматически экипирует первые claymore/angelicDoom,
-         * поэтому загрузка должна выполняться именно здесь и явно заменять
-         * эти значения сохранёнными оружиями.
-         */
-        restoreSavedLoadout();
-
         meleeActive = true;
-
-        // setupCharacterPanel() вызывается раньше добавления оружия,
-        // поэтому UI необходимо обновить после восстановления слотов.
         refreshCharacterPanel();
 
         players.put(
@@ -721,6 +793,7 @@ public class WorldScene {
          * WEAPONS
          */
 
+        data.weaponIds.clear();
         for (Weapon weapon :
                 inventory.getWeapons()) {
 
@@ -751,6 +824,16 @@ public class WorldScene {
         data.meleeActive =
                 meleeActive;
 
+        data.artifactIds.clear();
+        data.equippedArtifactIds.clear();
+        for (Artifact artifact : inventory.getArtifacts()) {
+            data.artifactIds.add(artifact.getId());
+        }
+        for (int artifactSlot = 0; artifactSlot < inventory.getArtifactSlotCount(); artifactSlot++) {
+            Artifact artifact = inventory.getEquippedArtifact(artifactSlot);
+            data.equippedArtifactIds.add(artifact == null ? null : artifact.getId());
+        }
+
         /*
          * BOSSES
          */
@@ -766,6 +849,8 @@ public class WorldScene {
                 );
             }
         }
+
+        data.player.oneHpMode = oneHpMode;
 
         return data;
     }
@@ -1143,6 +1228,8 @@ public class WorldScene {
 
     private void updatePlayerHud() {
 
+        applyEquippedArtifactHpBonuses();
+
         double ratio =
                 playerMaxHp <= 0
                         ? 0
@@ -1300,19 +1387,20 @@ public class WorldScene {
         localPlayer.locationY =
                 data.player.locationY;
 
-        playerHp =
-                data.player.hp;
-
-        playerMaxHp =
-                data.player.maxHp;
+        playerHp = data.player.hp;
+        playerMaxHp = data.player.maxHp;
 
         /*
-         * WEAPONS
+         * WEAPONS AND ARTIFACTS
+         * Save data stores the effective HP values. Remove the saved artifact
+         * bonus here; refreshCharacterPanel/updatePlayerHud will reapply it
+         * from the restored equipment exactly once.
          */
-
-        restoreWeaponsFromSave(
-                data
-        );
+        restoreWeaponsFromSave(data);
+        int restoredArtifactHpBonus = getEquippedArtifactHpBonus();
+        playerMaxHp = Math.max(1f, playerMaxHp - restoredArtifactHpBonus);
+        playerHp = Math.max(0f, playerHp - restoredArtifactHpBonus);
+        appliedArtifactHpBonus = 0;
 
         /*
          * ACTIVE WEAPON
@@ -1335,6 +1423,28 @@ public class WorldScene {
 
             if (boss != null) {
                 boss.setHp(0f);
+            }
+        }
+
+        oneHpMode = data.player.oneHpMode;
+        hardcoreMode = data.player.hardcoreMode;
+
+        // Восстанавливаем текущую локацию.
+        String savedLocationId = data.world.currentLocationId;
+
+        if (savedLocationId != null) {
+            Location savedLocation = locations.get(savedLocationId);
+
+            if (savedLocation != null) {
+                currentLocation = savedLocation;
+
+                worldWidth = savedLocation.getWidth();
+                worldHeight = savedLocation.getHeight();
+            } else {
+                System.err.println(
+                        "Не найдена сохранённая локация: "
+                                + savedLocationId
+                );
             }
         }
 
@@ -1389,19 +1499,38 @@ public class WorldScene {
                 );
             }
         }
-    }
-    private Weapon createWeaponById(
-            String id
-    ) {
 
+        inventory.clearArtifacts();
+        if (data.artifactIds != null) {
+            for (String artifactId : data.artifactIds) {
+                Artifact artifact = Artifact.byId(artifactId);
+                if (artifact != null) inventory.addArtifact(artifact);
+            }
+        }
+        if (inventory.getArtifacts().isEmpty()
+                && (data.artifactIds == null || data.artifactIds.isEmpty())) {
+            for (Artifact artifact : Artifact.all()) inventory.addArtifact(artifact);
+        }
+        if (data.equippedArtifactIds != null) {
+            for (int slot = 0; slot < Math.min(data.equippedArtifactIds.size(),
+                    inventory.getArtifactSlotCount()); slot++) {
+                String artifactId = data.equippedArtifactIds.get(slot);
+                Artifact artifact = inventory.findArtifactById(artifactId);
+                if (artifact != null) inventory.equipArtifact(slot, artifact);
+            }
+        }
+    }
+    private Weapon createWeaponById(String id) {
         if (id == null) {
             return null;
         }
 
         return switch (id) {
-
             case "weighted_claymore" ->
                     WeaponFactory.createWeightedClaymore();
+
+            case "iron_sword" ->
+                    WeaponFactory.createIronSword();
 
             case "angelic_doom" ->
                     WeaponFactory.createAngelicDoom();
@@ -1409,11 +1538,11 @@ public class WorldScene {
             case "gungnir" ->
                     WeaponFactory.createGungnir();
 
-            case "reliable_spear" ->
-                    WeaponFactory.createReliableSpear();
-
             case "gungnir_launcher" ->
                     WeaponFactory.createGungnirLauncher();
+
+            case "reliable_spear" ->
+                    WeaponFactory.createReliableSpear();
 
             case "mourning" ->
                     WeaponFactory.createMourning();
@@ -1424,10 +1553,37 @@ public class WorldScene {
             case "doom_star_shooter" ->
                     WeaponFactory.createDoomStarShooter();
 
-            default ->
-                    null;
+            // Новое оружие
+            case "material_curse_blade" ->
+                    WeaponFactory.createMaterialCurseBlade();
+
+            case "wooden_sword" ->
+                    WeaponFactory.createWoodenSword();
+
+            case "magmatic_claymore" ->
+                    WeaponFactory.createMagmaticClaymore();
+
+            case "dawn" ->
+                    WeaponFactory.createDawn();
+
+            case "zenith" ->
+                    WeaponFactory.createZenith();
+
+            case "twilight" ->
+                    WeaponFactory.createTwilight();
+
+            case "tomorrow" ->
+                    WeaponFactory.createTomorrow();
+
+            default -> {
+                System.err.println(
+                        "[WeaponFactory] Неизвестный ID оружия: " + id
+                );
+                yield null;
+            }
         };
     }
+
     public Difficulty getDifficulty() {
         return difficulty;
     }
@@ -1508,9 +1664,8 @@ public class WorldScene {
             /*
              * Переход в главное меню.
              */
-            sceneManager.show(
-                    SceneType.MAIN_MENU
-            );
+            sceneManager.saveCurrentGame();
+            sceneManager.show(SceneType.MAIN_MENU);
         });
 
         gameMenu.getChildren().addAll(
@@ -1670,11 +1825,13 @@ public class WorldScene {
         equippedMeleeValue.setAlignment(Pos.CENTER);
         equippedRangedValue.setAlignment(Pos.CENTER);
 
-        equippedMeleeValue.setPrefHeight(70);
-        equippedRangedValue.setPrefHeight(70);
-
-        equippedMeleeValue.setMaxWidth(Double.MAX_VALUE);
-        equippedRangedValue.setMaxWidth(Double.MAX_VALUE);
+        // Оружейные слоты теперь квадратные и визуально совпадают с ячейками инвентаря.
+        equippedMeleeValue.setPrefSize(66, 66);
+        equippedMeleeValue.setMinSize(66, 66);
+        equippedMeleeValue.setMaxSize(66, 66);
+        equippedRangedValue.setPrefSize(66, 66);
+        equippedRangedValue.setMinSize(66, 66);
+        equippedRangedValue.setMaxSize(66, 66);
 
         equippedMeleeValue.setStyle(
                 equipmentSlotStyle(
@@ -1698,10 +1855,43 @@ public class WorldScene {
                 WeaponType.RANGED
         );
 
+        // Просмотр описания оружия в слоте ближнего боя.
+        equippedMeleeValue.setOnMouseClicked(event -> {
+            Weapon weapon = inventory.getEquippedMeleeWeapon();
+
+            if (weapon != null) {
+                showItemDetails(weapon);
+            } else {
+                clearItemDetails();
+            }
+        });
+
+        // Просмотр описания оружия в слоте дальнего боя.
+        equippedRangedValue.setOnMouseClicked(event -> {
+            Weapon weapon = inventory.getEquippedRangedWeapon();
+
+            if (weapon != null) {
+                showItemDetails(weapon);
+            } else {
+                clearItemDetails();
+            }
+        });
+
+        VBox artifactSlotsBox = new VBox(8);
+        Label artifactTitle = createSectionTitle("АРТЕФАКТЫ");
+        GridPane artifactSlotsGrid = new GridPane();
+        artifactSlotsGrid.setHgap(8);
+        artifactSlotsGrid.setVgap(8);
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            StackPane artifactSlotNode = createArtifactSlot(slot);
+            artifactSlotNodes[slot] = artifactSlotNode;
+            refreshArtifactSlot(slot);
+            artifactSlotsGrid.add(artifactSlotNode, slot % 2, slot / 2);
+        }
+        artifactSlotsBox.getChildren().addAll(artifactTitle, artifactSlotsGrid);
+
         equipment.getChildren().addAll(
-                equipmentTitle,
-                equippedMeleeValue,
-                equippedRangedValue
+                equipmentTitle, equippedMeleeValue, equippedRangedValue, artifactSlotsBox
         );
 
         /* =================================================
@@ -1718,11 +1908,46 @@ public class WorldScene {
         inventoryGrid.setHgap(7);
         inventoryGrid.setVgap(7);
         inventoryGrid.setPadding(new Insets(4));
+        // Оружие и артефакты отображаются в одной общей сетке.
+        inventoryGrid.setOnDragOver(event -> {
+            if (event.getDragboard().hasString()) {
+                String value = event.getDragboard().getString();
+                if (value != null && (value.startsWith("equipped-artifact:")
+                        || value.startsWith("equipped-melee:")
+                        || value.startsWith("equipped-ranged:"))) {
+                    event.acceptTransferModes(TransferMode.MOVE);
+                }
+            }
+            event.consume();
+        });
+        inventoryGrid.setOnDragDropped(event -> {
+            boolean success = unequipDraggedItemToInventory(event.getDragboard().getString());
+            event.setDropCompleted(success);
+            event.consume();
+        });
 
-        inventoryBox.getChildren().addAll(
-                inventoryTitle,
-                inventoryGrid
+        ScrollPane inventoryScroll = new ScrollPane(inventoryGrid);
+
+        inventoryScroll.setFitToWidth(true);
+        inventoryScroll.setFitToHeight(false);
+        inventoryScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        inventoryScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+
+        inventoryScroll.setPrefViewportHeight(280);
+        inventoryScroll.setMinHeight(0);
+        inventoryScroll.setMaxHeight(280);
+
+        inventoryScroll.setStyle(
+                "-fx-background-color: transparent;" +
+                        "-fx-background: transparent;" +
+                        "-fx-border-color: transparent;"
         );
+
+        inventoryScroll.getContent().setStyle(
+                "-fx-background-color: transparent;"
+        );
+
+        inventoryBox.getChildren().addAll(inventoryTitle, inventoryScroll);
 
         /* =================================================
          * ITEM DETAILS
@@ -1795,6 +2020,144 @@ public class WorldScene {
         rebuildInventoryGrid();
     }
 
+    private StackPane createArtifactSlot(int slotIndex) {
+        StackPane slot = new StackPane();
+        slot.setPrefSize(66, 66);
+        slot.setMinSize(66, 66);
+        slot.setMaxSize(66, 66);
+        slot.setOnDragOver(event -> {
+            if (event.getDragboard().hasString() && isArtifactDrag(event.getDragboard().getString()))
+                event.acceptTransferModes(TransferMode.MOVE);
+            event.consume();
+        });
+        slot.setOnDragDropped(event -> {
+            boolean success = handleArtifactDropOnSlot(slotIndex, event.getDragboard().getString());
+            event.setDropCompleted(success);
+            event.consume();
+        });
+        slot.setOnDragDetected(event -> {
+            if (inventory.getEquippedArtifact(slotIndex) == null) return;
+            Dragboard dragboard = slot.startDragAndDrop(TransferMode.MOVE);
+            ClipboardContent content = new ClipboardContent();
+            content.putString("equipped-artifact:" + slotIndex);
+            dragboard.setContent(content);
+            event.consume();
+        });
+        slot.setOnMouseClicked(event -> {
+            Artifact artifact = inventory.getEquippedArtifact(slotIndex);
+            if (artifact != null) showArtifactDetails(artifact);
+        });
+        refreshArtifactSlot(slotIndex);
+        return slot;
+    }
+
+    private boolean isArtifactDrag(String value) {
+        return value != null && (value.startsWith("artifact:") || value.startsWith("equipped-artifact:"));
+    }
+
+    private boolean handleArtifactDropOnSlot(int targetSlot, String dragValue) {
+        if (dragValue == null) return false;
+        boolean success = false;
+        if (dragValue.startsWith("artifact:")) {
+            Artifact artifact = inventory.findArtifactById(dragValue.substring("artifact:".length()));
+            success = artifact != null && inventory.equipArtifact(targetSlot, artifact);
+        } else if (dragValue.startsWith("equipped-artifact:")) {
+            try {
+                int sourceSlot = Integer.parseInt(dragValue.substring("equipped-artifact:".length()));
+                Artifact moving = inventory.getEquippedArtifact(sourceSlot);
+                if (moving != null && sourceSlot != targetSlot) {
+                    Artifact displaced = inventory.getEquippedArtifact(targetSlot);
+                    inventory.unequipArtifact(sourceSlot);
+                    inventory.unequipArtifact(targetSlot);
+                    if (displaced != null) inventory.equipArtifact(sourceSlot, displaced);
+                    success = inventory.equipArtifact(targetSlot, moving);
+                }
+            } catch (NumberFormatException ignored) { }
+        }
+        if (success) {
+            saveCurrentLoadout();
+            refreshCharacterPanel();
+        }
+        return success;
+    }
+
+    private void refreshArtifactSlot(int slotIndex) {
+        if (slotIndex < 0 || slotIndex >= artifactSlotNodes.length || artifactSlotNodes[slotIndex] == null) return;
+        StackPane slot = artifactSlotNodes[slotIndex];
+        slot.getChildren().clear();
+        Artifact artifact = inventory.getEquippedArtifact(slotIndex);
+        Label icon = new Label(artifact == null ? "+" : artifactIcon(artifact));
+        icon.setTextFill(artifact == null ? Color.GRAY : artifactColor(artifact));
+        icon.setStyle("-fx-font-size: 25px; -fx-font-weight: bold;");
+        slot.getChildren().add(icon);
+        if (artifact != null) {
+            Label number = new Label(String.valueOf(slotIndex + 1));
+            number.setTextFill(Color.GRAY);
+            number.setStyle("-fx-font-size: 9px;");
+            StackPane.setAlignment(number, Pos.TOP_LEFT);
+            StackPane.setMargin(number, new Insets(4));
+            slot.getChildren().add(number);
+            javafx.scene.control.Tooltip.install(slot, new javafx.scene.control.Tooltip(artifact.getDisplayName() + "\n" + artifact.getRarity() + "\n" + artifact.getDescription()));
+        } else {
+            javafx.scene.control.Tooltip.install(slot, new javafx.scene.control.Tooltip("Слот артефакта " + (slotIndex + 1) + ". Перетащите сюда артефакт из инвентаря."));
+        }
+        slot.setStyle(artifactSlotStyle(artifact));
+    }
+
+    private String artifactIcon(Artifact artifact) {
+        switch (artifact) {
+            case WOODEN_BUCKLER: return "▰";
+            case LUCKY_CLOVER: return "♣";
+            case SHARP_MOTIVATIONAL_AMULET: return "♦";
+            case RELIABLE_SHIELD: return "⬟";
+            case WORN_ETHEREAL_DOLL: return "♙";
+            case WORN_BLOOD_CHALICE: return "♜";
+            case WORN_LIGHTNING_BRACELET: return "ϟ";
+            case TIN_WALL: return "◖";
+            case COLORED_METAL_STAR: return "✦";
+            case DRIED_HEART: return "♥";
+            case ANCIENTS_SHIELD: return "⛨";
+            case MATERIAL_CURSE_SHIELD: return "☠";
+            case CYBER_BOOTS: return "⌁";
+            case CONTINUUM_SPEAR: return "➶";
+            case AMMO_MODIFIER: return "◎";
+            case MECHANICAL_SQUIRE: return "⚙";
+            case UNSTABLE_AUTOMATION_MECHANISM: return "✣";
+            case WILD_HEMOKINESIS: return "♨";
+            default: return "◆";
+        }
+    }
+
+    private Color artifactColor(Artifact artifact) {
+        if (artifact == null) return Color.GRAY;
+        switch (artifact.getRarity()) {
+            case "Слабый": return Color.SILVER;
+            case "Классический": return Color.DEEPSKYBLUE;
+            case "Редкий": return Color.MEDIUMSEAGREEN;
+            case "Элитный": return Color.ORANGE;
+            case "Могущественный": return Color.MEDIUMPURPLE;
+            case "Божественный": return Color.GOLD;
+            default: return Color.WHITE;
+        }
+    }
+
+    private String artifactSlotStyle(Artifact artifact) {
+        String border = artifact == null ? "rgba(255,255,255,0.18)" : toCss(artifactColor(artifact));
+        return "-fx-background-color: rgba(20,20,27,0.96);-fx-border-color: " + border
+                + ";-fx-border-width: 2;-fx-border-radius: 4;-fx-background-radius: 4;";
+    }
+
+    private void showArtifactDetails(Artifact artifact) {
+        itemDetailsTitle.setText(artifact.getDisplayName());
+        itemDetailsQuality.setText(artifact.getRarity() + " • стоимость " + artifact.getCost());
+        itemDetailsQuality.setTextFill(artifactColor(artifact));
+        itemDetailsAttack.setText("Защита: " + artifact.getDefense() + " | baseDamage: +"
+                + formatNumber(artifact.getBaseDamageBonus()) + " | ATK: " + formatNumber(artifact.getAttackBonus()));
+        itemDetailsCharacteristics.setText(artifact.getDescription());
+        itemDetailsMain.setText("Перетащите предмет в квадратный слот артефакта, чтобы экипировать.");
+        itemDetailsLore.setText("");
+    }
+
     private String panelSectionStyle() {
         return """
         -fx-background-color: rgba(28,28,36,0.92);
@@ -1827,6 +2190,19 @@ public class WorldScene {
             Label slot,
             WeaponType acceptedType
     ) {
+        slot.setOnDragDetected(event -> {
+            Weapon equipped = acceptedType == WeaponType.MELEE
+                    ? inventory.getEquippedMeleeWeapon()
+                    : inventory.getEquippedRangedWeapon();
+            if (equipped == null) return;
+            Dragboard dragboard = slot.startDragAndDrop(TransferMode.MOVE);
+            ClipboardContent content = new ClipboardContent();
+            content.putString(acceptedType == WeaponType.MELEE ? "equipped-melee:" + equipped.getId()
+                    : "equipped-ranged:" + equipped.getId());
+            dragboard.setContent(content);
+            event.consume();
+        });
+
         slot.setOnDragOver(event -> {
 
             if (event.getGestureSource() != slot
@@ -1936,7 +2312,11 @@ public class WorldScene {
                 "HP: " + (int) playerHp + " / " + (int) playerMaxHp
         );
         characterAttackValue.setText(
-                "Атака: " + (int) PLAYER_ATTACK
+                "Атака: " + String.format(
+                        java.util.Locale.ROOT,
+                        "%.1f",
+                        getEffectivePlayerAttack()
+                ) + " (артефакты)"
         );
         characterSpeedValue.setText(
                 "Скорость: " + (int) LOCAL_PLAYER_SPEED
@@ -1946,38 +2326,150 @@ public class WorldScene {
         Weapon ranged = inventory.getEquippedRangedWeapon();
 
         equippedMeleeValue.setText(
-                "Ближний бой: " +
-                        (melee == null ? "—" : melee.getName())
+                melee == null ? "+" : "⚔\n" + melee.getName()
         );
         equippedRangedValue.setText(
-                "Дальний бой: " +
-                        (ranged == null ? "—" : ranged.getName())
+                ranged == null ? "+" : "➤\n" + ranged.getName()
         );
-        equippedMeleeValue.setStyle(
-                equipmentSlotStyle(melee)
-        );
-
-        equippedRangedValue.setStyle(
-                equipmentSlotStyle(ranged)
-        );
+        equippedMeleeValue.setTextFill(melee == null ? Color.GRAY : qualityColor(melee.getQuality()));
+        equippedRangedValue.setTextFill(ranged == null ? Color.GRAY : qualityColor(ranged.getQuality()));
+        equippedMeleeValue.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; " + equipmentSlotStyle(melee));
+        equippedRangedValue.setStyle("-fx-font-size: 11px; -fx-font-weight: bold; " + equipmentSlotStyle(ranged));
     }
 
     private void rebuildInventoryGrid() {
         inventoryGrid.getChildren().clear();
+        int displayIndex = 0;
 
-        for (int index = 0; index < 9; index++) {
+        // Экипированное оружие остаётся в модели инвентаря, но не дублируется в сетке.
+        for (int index = 0; index < inventory.getWeaponCount(); index++) {
             Weapon weapon = inventory.getWeapon(index);
+            if (weapon == null
+                    || weapon == inventory.getEquippedMeleeWeapon()
+                    || weapon == inventory.getEquippedRangedWeapon()) {
+                continue;
+            }
             StackPane cell = createInventoryCell(weapon, index);
-
-            inventoryGrid.add(cell, index % 3, index / 3);
+            installInventoryDropTarget(cell);
+            inventoryGrid.add(cell, displayIndex % 3, displayIndex / 3);
+            displayIndex++;
         }
+
+        // Артефакты находятся в той же сетке; экипированные скрыты до снятия.
+        for (int index = 0; index < inventory.getArtifacts().size(); index++) {
+            Artifact artifact = inventory.getArtifacts().get(index);
+            boolean equipped = false;
+            for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+                if (inventory.getEquippedArtifact(slot) == artifact) {
+                    equipped = true;
+                    break;
+                }
+            }
+            if (equipped) continue;
+            StackPane cell = createArtifactInventoryCell(artifact, index);
+            installInventoryDropTarget(cell);
+            inventoryGrid.add(cell, displayIndex % 3, displayIndex / 3);
+            displayIndex++;
+        }
+    }
+
+    private void installInventoryDropTarget(StackPane cell) {
+        cell.setOnDragOver(event -> {
+            String value = event.getDragboard().getString();
+            if (value != null && (value.startsWith("equipped-artifact:")
+                    || value.startsWith("equipped-melee:")
+                    || value.startsWith("equipped-ranged:"))) {
+                event.acceptTransferModes(TransferMode.MOVE);
+            }
+            event.consume();
+        });
+        cell.setOnDragDropped(event -> {
+            boolean success = unequipDraggedItemToInventory(event.getDragboard().getString());
+            event.setDropCompleted(success);
+            event.consume();
+        });
+    }
+
+    private boolean unequipDraggedItemToInventory(String value) {
+        if (value == null) return false;
+        boolean success = false;
+        try {
+            if (value.startsWith("equipped-artifact:")) {
+                int slot = Integer.parseInt(value.substring("equipped-artifact:".length()));
+                if (inventory.getEquippedArtifact(slot) != null) {
+                    inventory.unequipArtifact(slot);
+                    success = true;
+                }
+            } else if (value.startsWith("equipped-melee:")) {
+                inventory.unequipMeleeWeapon();
+                success = true;
+            } else if (value.startsWith("equipped-ranged:")) {
+                inventory.unequipRangedWeapon();
+                success = true;
+            }
+        } catch (NumberFormatException ignored) { }
+        if (success) {
+            saveCurrentLoadout();
+            refreshCharacterPanel();
+        }
+        return success;
+    }
+
+    private StackPane createArtifactInventoryCell(Artifact artifact, int index) {
+        StackPane cell = new StackPane();
+        cell.setPrefSize(66, 66);
+        cell.setMinSize(66, 66);
+        cell.setMaxSize(66, 66);
+        Label icon = new Label(artifactIcon(artifact));
+        icon.setTextFill(artifactColor(artifact));
+        icon.setStyle("-fx-font-size: 25px; -fx-font-weight: bold;");
+        Label number = new Label(String.valueOf(index + 1));
+        number.setTextFill(Color.GRAY);
+        number.setStyle("-fx-font-size: 9px;");
+        StackPane.setAlignment(number, Pos.TOP_LEFT);
+        StackPane.setMargin(number, new Insets(4));
+        cell.getChildren().addAll(icon, number);
+        cell.setStyle(artifactSlotStyle(artifact));
+        javafx.scene.control.Tooltip.install(cell, new javafx.scene.control.Tooltip(artifact.getDisplayName() + "\n" + artifact.getRarity()
+                + " • стоимость " + artifact.getCost() + "\n" + artifact.getDescription()));
+        cell.setOnMouseClicked(event -> showArtifactDetails(artifact));
+        cell.setOnDragDetected(event -> {
+            Dragboard dragboard = cell.startDragAndDrop(TransferMode.MOVE);
+            ClipboardContent content = new ClipboardContent();
+            content.putString("artifact:" + artifact.getId());
+            dragboard.setContent(content);
+            event.consume();
+        });
+        cell.setOnDragOver(event -> {
+            String value = event.getDragboard().getString();
+            if (value != null && value.startsWith("equipped-artifact:")) event.acceptTransferModes(TransferMode.MOVE);
+            event.consume();
+        });
+        cell.setOnDragDropped(event -> {
+            boolean success = false;
+            String value = event.getDragboard().getString();
+            if (value != null && value.startsWith("equipped-artifact:")) {
+                try {
+                    int slot = Integer.parseInt(value.substring("equipped-artifact:".length()));
+                    if (inventory.getEquippedArtifact(slot) != null) {
+                        inventory.unequipArtifact(slot);
+                        success = true;
+                        saveCurrentLoadout();
+                        refreshCharacterPanel();
+                    }
+                } catch (NumberFormatException ignored) { }
+            }
+            event.setDropCompleted(success);
+            event.consume();
+        });
+        return cell;
     }
 
     private StackPane createInventoryCell(Weapon weapon, int index) {
         StackPane cell = new StackPane();
-        cell.setPrefSize(78, 78);
-        cell.setMinSize(78, 78);
-        cell.setMaxSize(78, 78);
+        cell.setPrefSize(66, 66);
+        cell.setMinSize(66, 66);
+        cell.setMaxSize(66, 66);
 
         if (weapon == null) {
             cell.setStyle(inventoryCellStyle(null));
@@ -2000,7 +2492,7 @@ public class WorldScene {
         name.setTextFill(Color.WHITE);
         name.setStyle("-fx-font-size: 9px; -fx-font-weight: bold;");
         name.setWrapText(true);
-        name.setMaxWidth(68);
+        name.setMaxWidth(58);
         StackPane.setAlignment(name, Pos.BOTTOM_CENTER);
         StackPane.setMargin(name, new Insets(4));
 
@@ -2224,9 +2716,31 @@ public class WorldScene {
         return null;
     }
 
+    private int getEquippedArtifactHpBonus() {
+        int bonus = 0;
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            Artifact artifact = inventory.getEquippedArtifact(slot);
+            if (artifact != null) bonus += artifact.getMaxHpBonus();
+        }
+        return bonus;
+    }
+
+    private void applyEquippedArtifactHpBonuses() {
+        int newBonus = getEquippedArtifactHpBonus();
+
+        int difference = newBonus - appliedArtifactHpBonus;
+        if (difference != 0) {
+            playerMaxHp = Math.max(1f, playerMaxHp + difference);
+            playerHp = Math.max(0f, Math.min(playerMaxHp, playerHp + difference));
+            appliedArtifactHpBonus = newBonus;
+        }
+    }
+
     private void refreshCharacterPanel() {
+        applyEquippedArtifactHpBonuses();
         updateCharacterPanel();
         rebuildInventoryGrid();
+        for (int slot = 0; slot < artifactSlotNodes.length; slot++) refreshArtifactSlot(slot);
     }
 
     private void setCharacterPanelVisible(
@@ -2248,27 +2762,83 @@ public class WorldScene {
     }
 
 
-    private void handleLocalCombatHit(
-            LocalCombatHit hit
-    ) {
+    private boolean isArtifactEquipped(Artifact wanted) {
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            if (inventory.getEquippedArtifact(slot) == wanted) return true;
+        }
+        return false;
+    }
 
+    private void handleLocalCombatHit(LocalCombatHit hit) {
         showDamagePopup(
                 hit.getX(),
                 hit.getY(),
-                hit.getDamage()
+                hit.getDamage(),
+                hit.getDamageType()
         );
 
-        /*
-         * LocalCombatSystem уже применил урон к цели.
-         * Боссы используют BossCombatTarget, который
-         * автоматически передаёт урон своему Boss.
-         */
+        LocalCombatTarget target = combatSystem.getTarget(hit.getTargetId());
+
+        // Бафф щита из материального проклятия: внешний аффикс урона +4 за стак.
+        if (target != null && target.isAlive()
+                && System.nanoTime() < curseDamageUntilNanos
+                && curseDamageStacks > 0) {
+            float bonusDamage = curseDamageStacks * 4f;
+            target.damage(bonusDamage);
+            showDamagePopup(target.getX() + target.getWidth() / 2f,
+                    target.getY() + target.getHeight() / 2f, bonusDamage, hit.getDamageType());
+        }
+
+        // Цветная металлическая звезда: удваивает внешний урон и добавляет ещё 5.
+        if (target != null && target.isAlive()
+                && isArtifactEquipped(Artifact.COLORED_METAL_STAR)) {
+            float extraDamage = hit.getDamage() + 5f;
+            target.damage(extraDamage);
+            showDamagePopup(target.getX() + target.getWidth() / 2f,
+                    target.getY() + target.getHeight() / 2f, extraDamage, hit.getDamageType());
+        }
+
+        // Браслет молнии: +30 п.п. критического шанса.
+        // Критический удар добавляет ещё 100% исходного урона.
+        if (target != null && target.isAlive()
+                && isArtifactEquipped(Artifact.WORN_LIGHTNING_BRACELET)
+                && Math.random() < Artifact.WORN_LIGHTNING_BRACELET.getCriticalChanceBonus()) {
+            float criticalBonusDamage = hit.getDamage();
+            target.damage(criticalBonusDamage);
+            showDamagePopup(
+                    target.getX() + target.getWidth() / 2f,
+                    target.getY() + target.getHeight() / 2f,
+                    criticalBonusDamage,
+                    hit.getDamageType()
+            );
+        }
+
+        // Ветхая Эфирная кукла: шанс 10%, перезарядка 20 секунд.
+        // Фантом появляется у цели, визуально остаётся 6 секунд и повторяет попадание.
+        if (target != null && target.isAlive()
+                && isArtifactEquipped(Artifact.WORN_ETHEREAL_DOLL)
+                && System.nanoTime() >= etherealDollReadyAtNanos
+                && Math.random() < 0.10) {
+            float phantomDamage = hit.getDamage() * 0.50f;
+            target.damage(phantomDamage);
+            showDamagePopup(
+                    target.getX() + target.getWidth() / 2f,
+                    target.getY() + target.getHeight() / 2f,
+                    phantomDamage,
+                    hit.getDamageType()
+            );
+            etherealPhantomX = target.getX() + target.getWidth() / 2f;
+            etherealPhantomY = target.getY() + target.getHeight() / 2f;
+            etherealPhantomUntilNanos = System.nanoTime() + 6_000_000_000L;
+            etherealDollReadyAtNanos = System.nanoTime() + 20_000_000_000L;
+        }
 
         System.out.println(
                 "LOCAL DAMAGE: "
                         + hit.getTargetId()
                         + " -> "
                         + hit.getDamage()
+                        + " (" + hit.getDamageType() + ")"
         );
     }
 
@@ -2356,12 +2926,16 @@ public class WorldScene {
          */
         root.setOnKeyPressed(event -> {
             switch (event.getCode()) {
-                case W -> up = true;
-                case S -> down = true;
-                case A -> left = true;
-                case D -> right = true;
+                case W -> { handleCyberBootTap(KeyCode.W); up = true; }
+                case S -> { handleCyberBootTap(KeyCode.S); down = true; }
+                case A -> { handleCyberBootTap(KeyCode.A); left = true; }
+                case D -> { handleCyberBootTap(KeyCode.D); right = true; }
 
+                case E -> activateContinuumSpearDash();
                 case F -> interactWithNearbyPortal();
+                case Q -> activateTinWallRam();
+                case G -> placeAncientsShield();
+                case SPACE -> tryArtifactParry();
 
                 case R -> switchActiveWeapon();
                 case B -> setCharacterPanelVisible(!characterPanelVisible);
@@ -2407,7 +2981,14 @@ public class WorldScene {
 
             if (event.getButton() == MouseButton.PRIMARY) {
 
+                if (isArtifactEquipped(Artifact.MECHANICAL_SQUIRE)
+                        && selectMechanicalSquireWeapon(mouseX, mouseY)) {
+                    event.consume();
+                    return;
+                }
+
                 attackHeld = true;
+                attackAnimationTimer = ATTACK_ANIMATION_DURATION;
                 attackTimer = 0.0;
 
                 Weapon weapon = getCurrentWeapon();
@@ -2433,6 +3014,28 @@ public class WorldScene {
 
                 Weapon weapon = getCurrentWeapon();
 
+                if (weapon != null
+                        && weapon.getType() == WeaponType.MELEE
+                        && (weapon.getAttackStyle() == AttackStyle.THRUST
+                        || weapon.getAttackStyle() == AttackStyle.STAB)) {
+
+                    // ПКМ во время активного выпада запрашивает второй удар.
+                    if (!spearFollowupRequested) {
+                        for (SwordSwing swing : combatSystem.getActiveSwings()) {
+                            if (swing.getStyle() == AttackStyle.THRUST
+                                    || swing.getStyle() == AttackStyle.STAB) {
+
+                                spearComboThrust = swing;
+                                spearFollowupRequested = true;
+                                spearFollowupTimer = 0.0;
+                                break;
+                            }
+                        }
+                    }
+
+                    return;
+                }
+
                 if (isDoomStarShooter(weapon)) {
                     if (!doomStarCharged) {
                         doomStarCharging = true;
@@ -2452,6 +3055,10 @@ public class WorldScene {
 
                 attackHeld = false;
                 attackTimer = 0.0;
+
+                if (isDawn(getCurrentWeapon())) {
+                    dawnComboIndex = 0;
+                }
             }
 
             if (event.getButton() == MouseButton.SECONDARY) {
@@ -2468,6 +3075,7 @@ public class WorldScene {
     }
 
     private void useCurrentWeaponTrick() {
+
 
         if (localPlayer == null) {
             return;
@@ -2487,6 +3095,10 @@ public class WorldScene {
 
         Weapon weapon =
                 getCurrentWeapon();
+        if (isDawn(weapon)) {
+            performDawnFinisher();
+            return;
+        }
 
         if (!weaponTrickSystem.isGungnirDrill(weapon)) {
             return;
@@ -2706,6 +3318,26 @@ public class WorldScene {
             double deltaSeconds
     ) {
 
+        playerAnimationTime += deltaSeconds;
+        glitchAnimationTime += deltaSeconds;
+        updateCurseShieldEffects(deltaSeconds);
+
+        if (driedHeartTriggered && playerHp > 0f && playerHp < playerMaxHp) {
+            driedHeartRegenTimer += deltaSeconds;
+            while (driedHeartRegenTimer >= 1.0) {
+                playerHp = Math.min(playerMaxHp, playerHp + 1f);
+                driedHeartRegenTimer -= 1.0;
+                updatePlayerHud();
+            }
+        }
+
+        if (attackAnimationTimer > 0.0) {
+            attackAnimationTimer = Math.max(
+                    0.0,
+                    attackAnimationTimer - deltaSeconds
+            );
+        }
+
         if (localPlayer != null) {
 
             /*
@@ -2797,7 +3429,7 @@ public class WorldScene {
                 if (attackHeld) {
                     attackTimer += deltaSeconds;
 
-                    if (attackTimer >= getAttackInterval()) {
+                    if (attackTimer >= getAttackInputInterval()) {
                         attackTimer = 0.0;
 
                         Weapon weapon = getCurrentWeapon();
@@ -2828,11 +3460,72 @@ public class WorldScene {
                     }
                 }
 
+                if (tinWallRamCooldown > 0.0) {
+                    tinWallRamCooldown = Math.max(0.0, tinWallRamCooldown - deltaSeconds);
+                }
+                if (tinWallRamTimer > 0.0) {
+                    tinWallRamTimer = Math.max(0.0, tinWallRamTimer - deltaSeconds);
+                    tinWallArcAngle += 9.0 * deltaSeconds;
+                    applyTinWallRamDamage(playerCenterX, playerCenterY);
+                } else if (isArtifactEquipped(Artifact.TIN_WALL)) {
+                    float[] wallAim = getAimDirection(mouseX, mouseY);
+                    double aimAngle = Math.atan2(wallAim[1], wallAim[0]) + Math.PI;
+                    double angleDelta = Double.isNaN(tinWallPreviousAimAngle)
+                            ? 0.0
+                            : Math.atan2(Math.sin(aimAngle - tinWallPreviousAimAngle),
+                                         Math.cos(aimAngle - tinWallPreviousAimAngle));
+                    tinWallArcAngle = aimAngle;
+                    if (Math.abs(angleDelta) >= 0.015) {
+                        applyTinWallContactDamage(playerCenterX, playerCenterY);
+                    }
+                    tinWallPreviousAimAngle = aimAngle;
+                } else {
+                    tinWallPreviousAimAngle = Double.NaN;
+                }
+
                 combatSystem.update(
                         playerCenterX,
                         playerCenterY,
                         (float) deltaSeconds
                 );
+
+                if (spearFollowupRequested
+                        && spearComboThrust != null
+                        && spearComboThrust.isFinished()) {
+
+                    float dirX = spearComboThrust.getDirectionX();
+                    float dirY = spearComboThrust.getDirectionY();
+
+                    // Полная длина выпада: 20 + 90 = 110 единиц.
+                    float thrustEndX =
+                            spearComboThrust.getOriginX() + dirX * 110f;
+
+                    float thrustEndY =
+                            spearComboThrust.getOriginY() + dirY * 110f;
+
+                    // Второй удар наносит ровно половину урона выпада.
+                    float followupDamage =
+                            spearComboThrust.getDamage() * 0.5f;
+
+                    combatSystem.attackWithStyleAtOrigin(
+                            getCurrentWeapon(),
+                            followupDamage,
+                            thrustEndX,
+                            thrustEndY,
+                            dirX,
+                            dirY,
+                            AttackStyle.QUICK_SWING,
+                            true
+                    );
+
+                    spearComboThrust = null;
+                    spearFollowupRequested = false;
+                    spearFollowupTimer = 0.0;
+                }
+
+                updateCurseProjectiles(deltaSeconds, playerCenterX, playerCenterY);
+                updateMechanicalSquire(deltaSeconds, playerCenterX, playerCenterY);
+                configureRangedArtifactModifiers(getCurrentWeapon());
 
                 rangedProjectileSystem.update(
                         (float) deltaSeconds
@@ -3063,11 +3756,26 @@ public class WorldScene {
         projectileInvulnerability = false;
     }
 
+    /**
+     * Итоговая атака игрока с учётом экипированных артефактов.
+     *
+     * Сначала применяется плоский бонус, затем процентный.
+     */
+    private float getEffectivePlayerAttack() {
+        float baseAttack =
+                PLAYER_ATTACK + inventory.getArtifactAttackBonus();
+
+        float percentBonus =
+                inventory.getArtifactAttackPercentBonus();
+
+        return Math.max(0f, baseAttack * (1f + percentBonus));
+    }
 
     private double getAttackInterval() {
 
         Weapon weapon =
                 getCurrentWeapon();
+        configureRangedArtifactModifiers(weapon);
 
         if (weapon == null) {
             return 0.25;
@@ -3080,24 +3788,109 @@ public class WorldScene {
             return 0.25;
         }
 
-        return 1.0 / attackSpeed;
+        float artifactSpeedMultiplier = 1.0f;
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            Artifact equipped = inventory.getEquippedArtifact(slot);
+            if (equipped == null) continue;
+            if (weapon.getType() == WeaponType.RANGED) {
+                artifactSpeedMultiplier *= equipped.getRangedAttackSpeedMultiplier();
+            }
+            artifactSpeedMultiplier *= equipped.getAttackSpeedMultiplier();
+        }
+        return 1.0 / (attackSpeed * Math.max(0.05f, artifactSpeedMultiplier));
     }
 
+    private boolean isDawn(Weapon weapon) {
+        return weapon != null && "dawn".equals(weapon.getId());
+    }
+
+    private double getAttackInputInterval() {
+        Weapon weapon = getCurrentWeapon();
+
+        if (isDawn(weapon)) {
+            return dawnComboIndex == 4
+                    ? DAWN_FINISHER_DELAY
+                    : DAWN_COMBO_INTERVAL;
+        }
+
+        return getAttackInterval();
+    }
+
+
     private void damageLocalPlayer(float damage) {
-        if (damage <= 0 || playerHp <= 0) {
+        if (damage <= 0f || playerHp <= 0f) {
             return;
         }
 
+        // Щит из материального проклятия: короткое окно парирования.
+        if (isArtifactEquipped(Artifact.MATERIAL_CURSE_SHIELD)
+                && System.nanoTime() <= parryActiveUntilNanos) {
+            parryActiveUntilNanos = 0L;
+            spawnVengefulSpecter();
+            showDamagePopup(localPlayer.renderX + (float) PLAYER_SIZE / 2f,
+                    localPlayer.renderY, 0f, DamageType.PHYSICAL);
+            return;
+        }
+
+        // Засохшее сердце срабатывает только при первом получении урона за бой.
+        if (isArtifactEquipped(Artifact.DRIED_HEART) && !driedHeartTriggered) {
+            driedHeartTriggered = true;
+            playerMaxHp += 7f;
+            playerHp = Math.min(playerMaxHp, playerHp + 7f);
+            driedHeartRegenTimer = 0.0;
+            updatePlayerHud();
+        }
+
+        // Браслет молнии: 30 п.п. критического шанса конвертируются
+        // в 15 п.п. уклонения (соотношение 2:1).
+        float dodgeChance = isArtifactEquipped(Artifact.WORN_LIGHTNING_BRACELET)
+                ? Artifact.WORN_LIGHTNING_BRACELET.getCriticalChanceBonus()
+                    * Artifact.WORN_LIGHTNING_BRACELET.getDodgeConversionRatio()
+                : 0f;
+        if (dodgeChance > 0f && Math.random() < dodgeChance) {
+            showDamagePopup(
+                    localPlayer.renderX + (float) PLAYER_SIZE / 2f,
+                    localPlayer.renderY,
+                    0f,
+                    DamageType.PHYSICAL
+            );
+            return;
+        }
+
+        // Гемокинез повышает получаемый урон на 2 единицы.
+        if (isArtifactEquipped(Artifact.WILD_HEMOKINESIS)) {
+            damage += 2f;
+        }
+
+        // Сначала применяем модификатор сложности.
         damage = DifficultySettings.enemyDamage(
                 difficulty,
                 damage
         );
 
-        playerHp = Math.max(0, playerHp - damage);
+        // Затем вычитаем плоскую защиту артефактов.
+        int curseDefense = System.nanoTime() < curseDefenseUntilNanos
+                ? curseDefenseStacks * 4 : 0;
+        damage = Math.max(
+                0f,
+                damage - inventory.getArtifactDefenseBonus() - curseDefense
+        );
+
+        // После этого применяем процентную защиту.
+        float defensePercent =
+                inventory.getArtifactDefensePercentBonus();
+
+        damage *= Math.max(0f, 1f + defensePercent);
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            Artifact equipped = inventory.getEquippedArtifact(slot);
+            if (equipped != null) damage *= equipped.getIncomingDamageMultiplier();
+        }
+
+        playerHp = Math.max(0f, playerHp - damage);
 
         updatePlayerHud();
 
-        if (playerHp <= 0) {
+        if (playerHp <= 0f) {
             respawnPlayerAtStart();
         }
     }
@@ -3107,6 +3900,11 @@ public class WorldScene {
         /*
          * Полностью восстанавливаем здоровье.
          */
+        if (driedHeartTriggered) {
+            playerMaxHp = Math.max(1f, playerMaxHp - 7f);
+            driedHeartTriggered = false;
+            driedHeartRegenTimer = 0.0;
+        }
         playerHp = playerMaxHp;
 
         /*
@@ -3176,11 +3974,108 @@ public class WorldScene {
      * =====================================================
      */
 
+    private void handleCyberBootTap(KeyCode key) {
+        if (!isArtifactEquipped(Artifact.CYBER_BOOTS) || localPlayer == null) return;
+        long now = System.nanoTime();
+        long previous = cyberBootsLastTapNanos.getOrDefault(key, 0L);
+        cyberBootsLastTapNanos.put(key, now);
+        if (now - previous > 280_000_000L || now < cyberBootsCooldownUntilNanos) return;
+        cyberDashDirectionX = switch (key) { case A -> -1f; case D -> 1f; default -> 0f; };
+        cyberDashDirectionY = switch (key) { case W -> -1f; case S -> 1f; default -> 0f; };
+        cyberDashDistanceRemaining = 112.0;
+        cyberBootsCooldownUntilNanos = now + 1_500_000_000L;
+    }
+
+    private void activateContinuumSpearDash() {
+        if (!isArtifactEquipped(Artifact.CONTINUUM_SPEAR) || localPlayer == null
+                || System.nanoTime() < continuumDashCooldownUntilNanos) return;
+        float[] direction = getAimDirection(mouseX, mouseY);
+        continuumDashDirectionX = direction[0];
+        continuumDashDirectionY = direction[1];
+        continuumDashDistanceRemaining = 220.0;
+        continuumDashCooldownUntilNanos = System.nanoTime() + 5_000_000_000L;
+        continuumDashHitTargets.clear();
+    }
+
+    private void advanceCyberBootDash(double deltaSeconds) {
+        double distance = Math.min(cyberDashDistanceRemaining, 700.0 * deltaSeconds);
+        double stepSize = 6.0;
+        int steps = Math.max(1, (int) Math.ceil(distance / stepSize));
+        double stepX = cyberDashDirectionX * distance / steps;
+        double stepY = cyberDashDirectionY * distance / steps;
+        for (int i = 0; i < steps; i++) {
+            float nextX = (float) (localPlayer.serverX + stepX);
+            float nextY = (float) (localPlayer.serverY + stepY);
+            if (!canOccupyPlayerAt(nextX, nextY)) {
+                cyberDashDistanceRemaining = 0.0;
+                return;
+            }
+            localPlayer.serverX = nextX;
+            localPlayer.serverY = nextY;
+            cyberDashDistanceRemaining -= Math.sqrt(stepX * stepX + stepY * stepY);
+        }
+        cyberDashDistanceRemaining = Math.max(0.0, cyberDashDistanceRemaining);
+    }
+
+    private boolean canOccupyPlayerAt(float x, float y) {
+        if (x < 0 || y < 0 || x + PLAYER_SIZE > worldWidth || y + PLAYER_SIZE > worldHeight) return false;
+        for (LocalCombatTarget target : combatSystem.getTargets()) {
+            if (target == null || !target.isAlive()) continue;
+            if (x < target.getX() + target.getWidth() && x + PLAYER_SIZE > target.getX()
+                    && y < target.getY() + target.getHeight() && y + PLAYER_SIZE > target.getY()) return false;
+        }
+        for (WorldObject object : objects) {
+            if (object == null) continue;
+            if (x < object.x + object.width && x + PLAYER_SIZE > object.x
+                    && y < object.y + object.height && y + PLAYER_SIZE > object.y) return false;
+        }
+        return true;
+    }
+
+    private void advanceContinuumSpearDash(double deltaSeconds) {
+        double distance = Math.min(continuumDashDistanceRemaining, 900.0 * deltaSeconds);
+        int steps = Math.max(1, (int) Math.ceil(distance / 8.0));
+        double stepX = continuumDashDirectionX * distance / steps;
+        double stepY = continuumDashDirectionY * distance / steps;
+        for (int i = 0; i < steps; i++) {
+            localPlayer.serverX = (float) Math.max(0, Math.min(worldWidth - PLAYER_SIZE, localPlayer.serverX + stepX));
+            localPlayer.serverY = (float) Math.max(0, Math.min(worldHeight - PLAYER_SIZE, localPlayer.serverY + stepY));
+            float centerX = localPlayer.serverX + (float) PLAYER_SIZE / 2f;
+            float centerY = localPlayer.serverY + (float) PLAYER_SIZE / 2f;
+            Weapon weapon = inventory.getEquippedMeleeWeapon();
+            float physicalDamage = weapon == null ? 0f : DamageCalculator.calculateTickDamage(weapon, PLAYER_ATTACK);
+            float dashDamage = 20f + physicalDamage;
+            for (LocalCombatTarget target : combatSystem.getTargets()) {
+                if (target == null || !target.isAlive() || continuumDashHitTargets.contains(target.getId())) continue;
+                float tx = target.getX() + target.getWidth() / 2f;
+                float ty = target.getY() + target.getHeight() / 2f;
+                float dx = tx - centerX;
+                float dy = ty - centerY;
+                float reach = Math.max(24f, target.getWidth() / 2f + 10f);
+                if (dx * dx + dy * dy <= reach * reach) {
+                    target.damage(dashDamage);
+                    continuumDashHitTargets.add(target.getId());
+                    showDamagePopup(tx, ty, dashDamage, DamageType.PHYSICAL);
+                }
+            }
+            continuumDashDistanceRemaining -= Math.sqrt(stepX * stepX + stepY * stepY);
+        }
+        continuumDashDistanceRemaining = Math.max(0.0, continuumDashDistanceRemaining);
+    }
+
     private void moveLocalPlayer(
             double deltaSeconds
     ) {
 
         if (localPlayer == null) {
+            return;
+        }
+        if (cyberDashDistanceRemaining > 0.0) {
+            advanceCyberBootDash(deltaSeconds);
+            return;
+        }
+        if (continuumDashDistanceRemaining > 0.0) {
+            advanceContinuumSpearDash(deltaSeconds);
             return;
         }
         if (activeCombatDash != null
@@ -3248,6 +4143,16 @@ public class WorldScene {
                         difficulty,
                         LOCAL_PLAYER_SPEED
                 );
+
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            Artifact equipped = inventory.getEquippedArtifact(slot);
+            if (equipped != null) {
+                movementSpeed *= equipped.getMovementSpeedMultiplier();
+            }
+        }
+        if (System.nanoTime() < curseSpeedUntilNanos) {
+            movementSpeed *= 1.0 + 0.08 * curseSpeedStacks;
+        }
 
         localPlayer.serverX +=
                 dx * movementSpeed * deltaSeconds;
@@ -3408,7 +4313,20 @@ public class WorldScene {
 
         renderSwordSwings();
 
+        // Сначала оружие позади персонажа.
+        renderEquippedWeapon(false);
+
+        renderTinWallArc();
+        renderEtherealPhantom();
+        renderAncientsShield();
+        renderMechanicalSquire();
+        renderCurseProjectiles();
+
+        // Затем сам персонаж.
         renderPlayers();
+
+        // Оружие поверх персонажа — только при атаке вниз.
+        renderEquippedWeapon(true);
 
         if (gungnirDrillActive) {
             renderGungnirDrill(gc);
@@ -3449,6 +4367,51 @@ public class WorldScene {
             case LEFT -> 90;
             case DOWN_LEFT -> 45;
         };
+    }
+
+    private void addAllWeaponsToInventory() {
+        String[] allWeaponIds = {
+                "weighted_claymore",
+                "iron_sword",
+                "angelic_doom",
+                "gungnir",
+                "gungnir_launcher",
+                "reliable_spear",
+                "mourning",
+                "ice_shooter",
+                "doom_star_shooter",
+
+                // Новое оружие
+                "material_curse_blade",
+                "wooden_sword",
+                "magmatic_claymore",
+                "dawn",
+                "zenith",
+                "twilight",
+                "tomorrow"
+        };
+
+        for (String weaponId : allWeaponIds) {
+            if (inventory.findWeaponById(weaponId) != null) {
+                continue;
+            }
+
+            Weapon weapon = createWeaponById(weaponId);
+
+            if (weapon != null) {
+                if (inventory.addWeapon(weapon)) {
+                    System.out.println(
+                            "[Inventory] Добавлено оружие: "
+                                    + weapon.getName()
+                    );
+                } else {
+                    System.err.println(
+                            "[Inventory] Не удалось добавить оружие: "
+                                    + weapon.getName()
+                    );
+                }
+            }
+        }
     }
 
     private void renderGungnirDrill(GraphicsContext gc) {
@@ -3795,13 +4758,9 @@ public class WorldScene {
                     "-" + formatDamage(popup.damage);
 
             gc.setFill(
-                    Color.rgb(
-                            255,
-                            235,
-                            80,
-                            alpha
-                    )
+                    getDamageColor(popup.damageType)
             );
+            gc.setGlobalAlpha(alpha);
 
             gc.setStroke(
                     Color.rgb(
@@ -3825,6 +4784,7 @@ public class WorldScene {
                     drawX,
                     drawY
             );
+            gc.setGlobalAlpha(1.0);
         }
     }
 
@@ -4723,75 +5683,1322 @@ public class WorldScene {
      * =====================================================
      */
 
+
+    private void tryArtifactParry() {
+        if (!isArtifactEquipped(Artifact.MATERIAL_CURSE_SHIELD)) return;
+        long now = System.nanoTime();
+        if (now < parryCooldownUntilNanos) return;
+        parryActiveUntilNanos = now + 160_000_000L;
+        parryCooldownUntilNanos = now + 250_000_000L;
+    }
+
+    private void placeAncientsShield() {
+        if (!isArtifactEquipped(Artifact.ANCIENTS_SHIELD) || localPlayer == null) return;
+        double cameraX = localPlayer.renderX + PLAYER_SIZE / 2.0;
+        double cameraY = localPlayer.renderY + PLAYER_SIZE / 2.0;
+        ancientsShieldX = cameraX + mouseX - canvas.getWidth() / 2.0;
+        ancientsShieldY = cameraY + mouseY - canvas.getHeight() / 2.0;
+        ancientsShieldPlaced = true;
+    }
+
+    private void renderAncientsShield() {
+        if (!isArtifactEquipped(Artifact.ANCIENTS_SHIELD) || !ancientsShieldPlaced) return;
+        gc.save();
+        gc.setFill(Color.color(0.30, 0.55, 0.90, 0.78));
+        gc.fillRoundRect(ancientsShieldX - 18, ancientsShieldY - 24, 36, 48, 8, 8);
+        gc.setStroke(Color.web("#DCEBFF"));
+        gc.setLineWidth(3.0);
+        gc.strokeRoundRect(ancientsShieldX - 18, ancientsShieldY - 24, 36, 48, 8, 8);
+        gc.restore();
+    }
+
+    private void activateTinWallRam() {
+        if (!isArtifactEquipped(Artifact.TIN_WALL)
+                || tinWallRamCooldown > 0.0) {
+            return;
+        }
+        float[] aim = getAimDirection(mouseX, mouseY);
+        tinWallArcAngle = Math.atan2(aim[1], aim[0]) + Math.PI;
+        tinWallRamTimer = 0.65;
+        tinWallRamCooldown = 1.5;
+        tinWallRamHitTargets.clear();
+    }
+
+    private void applyTinWallRamDamage(float playerCenterX, float playerCenterY) {
+        Weapon weapon = getCurrentWeapon();
+        float physicalDamage = weapon == null
+                ? 0f
+                : DamageCalculator.calculateTickDamage(weapon, PLAYER_ATTACK);
+        float ramDamage = 10f + physicalDamage * 0.25f;
+        double halfArc = Math.PI / 5.0; // дуга 1/5 окружности = 72 градуса
+        double radius = PLAYER_SIZE * 2.2;
+
+        for (LocalCombatTarget target : combatSystem.getTargets()) {
+            if (target == null || !target.isAlive()
+                    || tinWallRamHitTargets.contains(target.getId())) {
+                continue;
+            }
+            double tx = target.getX() + target.getWidth() / 2.0 - playerCenterX;
+            double ty = target.getY() + target.getHeight() / 2.0 - playerCenterY;
+            double distance = Math.hypot(tx, ty);
+            if (distance > radius) continue;
+            double targetAngle = Math.atan2(ty, tx);
+            double angleDiff = Math.atan2(
+                    Math.sin(targetAngle - tinWallArcAngle),
+                    Math.cos(targetAngle - tinWallArcAngle));
+            if (Math.abs(angleDiff) <= halfArc) {
+                target.damage(ramDamage);
+                tinWallRamHitTargets.add(target.getId());
+                showDamagePopup(
+                        target.getX() + target.getWidth() / 2f,
+                        target.getY() + target.getHeight() / 2f,
+                        ramDamage,
+                        DamageType.PHYSICAL
+                );
+            }
+        }
+    }
+
+    private void applyTinWallContactDamage(float playerCenterX, float playerCenterY) {
+        Weapon weapon = getCurrentWeapon();
+        float physicalDamage = weapon == null
+                ? PLAYER_ATTACK
+                : DamageCalculator.calculateTickDamage(weapon, PLAYER_ATTACK);
+        float damage = 10f + physicalDamage * 0.25f;
+        double halfArc = Math.PI / 5.0;
+        double maxDistance = PLAYER_SIZE * 2.8;
+        long now = System.nanoTime();
+
+        for (LocalCombatTarget target : combatSystem.getTargets()) {
+            if (target == null || !target.isAlive()) continue;
+            double tx = target.getX() + target.getWidth() / 2.0 - playerCenterX;
+            double ty = target.getY() + target.getHeight() / 2.0 - playerCenterY;
+            double distance = Math.hypot(tx, ty);
+            if (distance > maxDistance || distance < PLAYER_SIZE * 0.8) continue;
+
+            double targetAngle = Math.atan2(ty, tx);
+            double angleDiff = Math.atan2(Math.sin(targetAngle - tinWallArcAngle),
+                                          Math.cos(targetAngle - tinWallArcAngle));
+            if (Math.abs(angleDiff) > halfArc) continue;
+
+            long lastHit = tinWallLastContactHitNanos.getOrDefault(target.getId(), 0L);
+            if (now - lastHit < 300_000_000L) continue;
+
+            target.damage(damage);
+            tinWallLastContactHitNanos.put(target.getId(), now);
+            showDamagePopup(target.getX() + target.getWidth() / 2f,
+                    target.getY() + target.getHeight() / 2f, damage, DamageType.PHYSICAL);
+        }
+    }
+
+    private void renderTinWallArc() {
+        if (!isArtifactEquipped(Artifact.TIN_WALL) || localPlayer == null) return;
+
+        float[] aim = getAimDirection(mouseX, mouseY);
+        double baseAngle = Math.atan2(aim[1], aim[0]) + Math.PI;
+        if (tinWallRamTimer <= 0.0) tinWallArcAngle = baseAngle;
+
+        double cx = localPlayer.renderX + PLAYER_SIZE / 2.0;
+        double cy = localPlayer.renderY + PLAYER_SIZE / 2.0;
+        double radius = PLAYER_SIZE * 1.9;
+        double halfArc = Math.PI / 5.0;
+
+        // Рисуем дугу через мировые координаты (x=cos, y=sin),
+        // чтобы центр дуги точно смотрел на 180 градусов от курсора.
+        gc.save();
+        gc.setStroke(Color.web("#66717D", 0.98));
+        gc.setLineWidth(17.0);
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        gc.beginPath();
+        for (int i = 0; i <= 24; i++) {
+            double angle = tinWallArcAngle - halfArc + (halfArc * 2.0) * i / 24.0;
+            double x = cx + Math.cos(angle) * radius;
+            double y = cy + Math.sin(angle) * radius;
+            if (i == 0) gc.moveTo(x, y);
+            else gc.lineTo(x, y);
+        }
+        gc.stroke();
+        gc.setStroke(Color.web("#E2E8F0", 0.98));
+        gc.setLineWidth(3.0);
+        gc.stroke();
+        gc.restore();
+    }
+
+    private void renderEtherealPhantom() {
+        if (System.nanoTime() >= etherealPhantomUntilNanos) return;
+        double remaining = (etherealPhantomUntilNanos - System.nanoTime()) / 6_000_000_000.0;
+        gc.save();
+        gc.setGlobalAlpha(Math.max(0.15, Math.min(0.65, remaining * 0.65)));
+        gc.setFill(Color.web("#8DEBFF"));
+        gc.fillOval(etherealPhantomX - 9, etherealPhantomY - 15, 18, 18);
+        gc.fillRoundRect(etherealPhantomX - 7, etherealPhantomY + 2, 14, 23, 5, 5);
+        gc.setStroke(Color.web("#D9FAFF"));
+        gc.setLineWidth(2.0);
+        gc.strokeOval(etherealPhantomX - 12, etherealPhantomY - 18, 24, 45);
+        gc.restore();
+    }
+
     private void renderPlayers() {
+        for (RemotePlayer player : players.values()) {
+            double centerX = player.renderX + PLAYER_SIZE / 2.0;
+            double centerY = player.renderY + PLAYER_SIZE / 2.0;
+            double size = PLAYER_VISUAL_SIZE;
 
-        for (RemotePlayer player :
-                players.values()) {
+            boolean isLocal = player == localPlayer;
 
-            /*
-             * Direction enum:
-             *
-             * 0 DOWN
-             * 1 DOWN_RIGHT
-             * 2 RIGHT
-             * 3 UP_RIGHT
-             * 4 UP
-             * 5 UP_LEFT
-             * 6 LEFT
-             * 7 DOWN_LEFT
-             */
+            boolean moving = isLocal && (up || down || left || right);
 
-            int directionIndex =
-                    player.direction.ordinal();
+            double stride = moving
+                    ? Math.sin(playerAnimationTime * 10.0)
+                    : 0.0;
 
-            double sourceX =
-                    directionIndex
-                            * PLAYER_SPRITE_WIDTH;
+// При ходьбе движение заметнее, в покое — едва заметно.
+            double bounce = moving
+                    ? Math.abs(stride) * 3.0
+                    : Math.sin(playerAnimationTime * 2.0) * 0.5;
 
-            /*
-             * Центрируем 32px sprite
-             * внутри игровой области 40px.
-             */
-            double spriteX =
-                    player.renderX
-                            + (
-                            PLAYER_SIZE
-                                    - PLAYER_SPRITE_WIDTH
-                    ) / 2.0;
+            boolean attacking = isLocal
+                    && (attackAnimationTimer > 0.0
+                    || attackHeld
+                    || secondaryAttackHeld);
 
-            double spriteY =
-                    player.renderY;
+            double attackProgress = attackAnimationTimer > 0.0
+                    ? 1.0 - attackAnimationTimer / ATTACK_ANIMATION_DURATION
+                    : 0.0;
 
-            gc.drawImage(
-                    playerSpriteSheet,
+// Сила замаха: сначала замах, затем удар.
+            double attackSwing = attacking
+                    ? Math.sin(attackProgress * Math.PI) * 55.0
+                    : 0.0;
 
-                    sourceX,
-                    0,
-
-                    PLAYER_SPRITE_WIDTH,
-                    PLAYER_SPRITE_HEIGHT,
-
-                    spriteX,
-                    spriteY,
-
-                    PLAYER_SPRITE_WIDTH,
-                    PLAYER_SPRITE_HEIGHT
+// Направление текущей атаки.
+            float[] aim = getAimDirection(mouseX, mouseY);
+            double aimAngle = Math.toDegrees(
+                    Math.atan2(aim[1], aim[0])
             );
 
-            /*
-             * Имя игрока.
-             */
-            gc.setFill(
-                    Color.WHITE
-            );
+// При атаке корпус наклоняется в сторону цели.
+            double bodyLean = attacking
+                    ? Math.sin(attackProgress * Math.PI) * 5.0
+                    : 0.0;
 
+// Рука направляется к цели.
+// У drawPlayerLimb нулевой угол означает движение вниз,
+// поэтому вычитаем 90 градусов.
+            double attackArmAngle = aimAngle - 90.0;
+
+// Размах ног при ходьбе.
+            double legSwing = stride * 22.0;
+
+// Движение рук при ходьбе.
+            double armSwing = stride * 18.0;
+
+            gc.save();
+            gc.translate(centerX, centerY + bounce);
+
+// Наклон вперёд во время атаки.
+            gc.rotate(bodyLean);
+
+            boolean isLocalPlayer = player == localPlayer;
+
+
+            if (hardcoreMode) {
+                if (isLocalPlayer && oneHpMode) {
+                    drawStickman(
+                            stride,
+                            attacking,
+                            attackArmAngle,
+                            legSwing,
+                            armSwing
+                    );
+                } else {
+                    drawPlayerSilhouette(
+                            stride,
+                            attacking,
+                            attackSwing,
+                            attackArmAngle,
+                            legSwing,
+                            armSwing
+                    );
+                }
+            } else {
+
+                drawGlitchCharacter(
+                        isLocalPlayer && oneHpMode,
+                        stride,
+                        attacking,
+                        attackSwing,
+                        attackArmAngle,
+                        legSwing,
+                        armSwing
+                );
+
+            }
+
+
+            gc.restore();
+
+            // Имя над персонажем.
+            gc.setFill(Color.WHITE);
             gc.fillText(
                     player.username,
-                    player.renderX,
-                    player.renderY - 8
+                    centerX - size / 2.0,
+                    centerY - size / 2.0 - 8
             );
         }
     }
+
+    private void drawStickman(
+            double stride,
+            boolean attacking,
+            double attackArmAngle,
+            double legSwing,
+            double armSwing
+    ) {
+        gc.setStroke(Color.BLACK);
+        gc.setFill(Color.BLACK);
+        gc.setLineWidth(6.0);
+        gc.setLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+
+        // Голова.
+        gc.fillOval(-12, -46, 24, 24);
+
+        // Туловище.
+        gc.strokeLine(0, -20, 0, 19);
+
+
+
+        if (attacking) {
+            // attackArmAngle — угол конечности, направленной вниз
+            // при значении 0. Восстанавливаем угол направления к цели.
+            double aimAngle = Math.toRadians(attackArmAngle + 90.0);
+
+            double dirX = Math.cos(aimAngle);
+            double dirY = Math.sin(aimAngle);
+
+            // Выбираем плечо со стороны цели.
+            double shoulderX = dirX >= 0.0 ? 5.0 : -5.0;
+
+            // Атакующая рука идёт от плеча строго к цели.
+            gc.strokeLine(
+                    shoulderX, -12,
+                    shoulderX + dirX * 31.0,
+                    -12 + dirY * 31.0
+            );
+
+            // Вторая рука короткая и прижата к туловищу.
+            // Не отбрасываем её в противоположную сторону.
+            // Вспомогательная рука видна только при атаке почти строго вниз.
+            boolean keepSupportArm =
+                    dirY > 0.8 && Math.abs(dirX) < 0.35;
+
+            if (keepSupportArm) {
+                // При атаке вниз оставляем короткую вспомогательную руку.
+                double supportX = -shoulderX;
+
+                gc.strokeLine(
+                        supportX, -12,
+                        supportX, 0
+                );
+            } else if (dirY < -0.35) {
+                // При атаке вверх показываем только плечи,
+                // без вытянутой вспомогательной руки.
+                gc.strokeLine(-5, -12, -2, -9);
+                gc.strokeLine(5, -12, 2, -9);
+            }
+        } else {
+            // Руки движутся в противофазе ногам.
+            gc.strokeLine(
+                    -5, -12,
+                    -22 - armSwing * 0.4,
+                    8 + armSwing * 0.3
+            );
+
+            gc.strokeLine(
+                    5, -12,
+                    22 + armSwing * 0.4,
+                    8 - armSwing * 0.3
+            );
+        }
+
+
+        // Ноги.
+        gc.strokeLine(
+                0, 19,
+                -17 + legSwing, 43
+        );
+
+        gc.strokeLine(
+                0, 19,
+                17 - legSwing, 43
+        );
+    }
+
+
+    private void drawPlayerSilhouette(
+            double stride,
+            boolean attacking,
+            double attackSwing,
+            double attackArmAngle,
+            double legSwing,
+            double armSwing
+    ) {
+        gc.setFill(Color.BLACK);
+
+        // Ноги.
+        drawPlayerLimb(
+                -8, 18,
+                -legSwing,
+                31, 11
+        );
+
+        drawPlayerLimb(
+                8, 18,
+                legSwing,
+                31, 11
+        );
+
+        // Ступни.
+        gc.fillRoundRect(
+                -19 + stride * 5,
+                43,
+                19, 8, 5, 5
+        );
+
+        gc.fillRoundRect(
+                -stride * 5,
+                43,
+                19, 8, 5, 5
+        );
+
+        // Корпус.
+        gc.fillPolygon(
+                new double[]{
+                        -13, -27, -27, -17,
+                        -12, 12, 17, 27,
+                        27, 13, 10, -10
+                },
+                new double[]{
+                        -24, -19, -10, -3,
+                        19, 19, -3, -10,
+                        -19, -24, 14, 14
+                },
+                12
+        );
+
+        // Шея и голова.
+        gc.fillRoundRect(-6, -36, 12, 15, 4, 4);
+        gc.fillOval(-14, -55, 28, 27);
+
+        gc.fillPolygon(
+                new double[]{-11, 11, 8, -8},
+                new double[]{-35, -35, -27, -27},
+                4
+        );
+
+
+
+
+        if (attacking) {
+            double aimAngle = Math.toRadians(attackArmAngle + 90.0);
+            double dirX = Math.cos(aimAngle);
+            double dirY = Math.sin(aimAngle);
+
+            // При атаке вверх полностью скрываем обе руки.
+            // Корпус, голова и ноги продолжают рисоваться.
+            if (dirY >= -0.35) {
+                double attackShoulderX = dirX >= 0.0 ? 22.0 : -22.0;
+
+                drawPlayerLimb(
+                        attackShoulderX, -19,
+                        attackArmAngle, 31, 10
+                );
+
+                // Вспомогательная рука — только при ударе почти строго вниз.
+                boolean keepSupportArm =
+                        dirY > 0.8 && Math.abs(dirX) < 0.35;
+
+                if (keepSupportArm) {
+                    double supportShoulderX = -attackShoulderX;
+
+                    drawPlayerLimb(
+                            supportShoulderX, -19,
+                            0.0, 12, 9
+                    );
+                }
+            }
+        } else {
+            drawPlayerLimb(
+                    -22, -19,
+                    -armSwing,
+                    31, 10
+            );
+
+            drawPlayerLimb(
+                    22, -19,
+                    armSwing,
+                    31, 10
+            );
+        }
+
+
+
+    }
+
+
+
+    private void drawGlitchCharacter(
+            boolean stickman,
+            double stride,
+            boolean attacking,
+            double attackSwing,
+            double attackArmAngle,
+            double legSwing,
+            double armSwing
+    ) {
+        final double cell = 6.0;
+
+        final Color[] palette = {
+                Color.rgb(0, 220, 255),
+                Color.rgb(35, 100, 255),
+                Color.rgb(130, 55, 255),
+                Color.rgb(255, 35, 170),
+                Color.rgb(255, 55, 65),
+                Color.rgb(255, 125, 30),
+                Color.rgb(255, 220, 45),
+                Color.rgb(60, 255, 100),
+                Color.rgb(235, 245, 255),
+                Color.rgb(55, 60, 75),
+                Color.rgb(100, 110, 130)
+        };
+
+        for (double y = -60; y < 55; y += cell) {
+            for (double x = -35; x < 35; x += cell) {
+                double cx = x + cell / 2.0;
+                double cy = y + cell / 2.0;
+
+                if (!isInsideCharacter(
+                        cx, cy, stickman,
+                        stride, attacking, attackArmAngle,
+                        legSwing, armSwing
+                )) {
+                    continue;
+                }
+
+                double phase = glitchAnimationTime * 5.3
+                        + cx * 0.173
+                        + cy * 0.317;
+
+                double noise = Math.sin(phase * 1.71)
+                        * Math.sin(phase * 0.83 + cx * 0.21)
+                        * Math.cos(
+                        cy * 0.39
+                                - glitchAnimationTime * 2.7
+                );
+
+                if (noise > 0.91) {
+                    continue;
+                }
+
+                double burst = Math.sin(
+                        cx * 0.41 + glitchAnimationTime * 3.7
+                ) * Math.cos(
+                        cy * 0.27 - glitchAnimationTime * 2.9
+                );
+
+                boolean displaced = burst > 0.78
+                        && Math.sin(phase * 2.3) > -0.1;
+
+                double width = cell;
+                double height = cell;
+
+                double sizeNoise = Math.sin(
+                        phase * 2.91 + cx * 0.13
+                );
+
+                if (sizeNoise > 0.55) {
+                    width = cell * 1.6;
+                }
+
+                if (sizeNoise < -0.58) {
+                    height = cell * 1.5;
+                }
+
+                double offsetX = Math.sin(phase * 1.9) * 1.2;
+                double offsetY = Math.cos(phase * 1.4) * 0.8;
+
+                if (displaced) {
+                    offsetX += 5.0
+                            + Math.abs(Math.sin(phase)) * 7.0;
+
+                    height = Math.max(2.0, cell * 0.65);
+                    width = cell * (
+                            1.8 + Math.abs(Math.sin(phase))
+                    );
+                }
+
+                double colorNoise = Math.sin(
+                        phase * 2.17 + cx * 0.17
+                ) * Math.cos(
+                        phase * 1.37 - cy * 0.23
+                );
+
+                int colorIndex = (int) Math.floor(
+                        Math.abs(Math.sin(
+                                cx * 0.31
+                                        + cy * 0.47
+                                        + glitchAnimationTime * 1.9
+                        )) * palette.length
+                );
+
+                colorIndex = Math.min(
+                        palette.length - 1,
+                        Math.max(0, colorIndex)
+                );
+
+                Color color;
+
+                if (colorNoise > -0.05) {
+                    color = palette[colorIndex];
+                } else if (colorNoise < -0.64) {
+                    color = palette[8];
+                } else {
+                    double shade = 0.035 + Math.abs(noise) * 0.17;
+                    color = Color.gray(shade);
+                }
+
+                gc.setFill(color);
+                gc.fillRect(
+                        x + offsetX,
+                        y + offsetY,
+                        width,
+                        height
+                );
+
+                if (displaced && Math.sin(phase * 3.13) > 0.38) {
+                    gc.setFill(
+                            palette[(colorIndex + 3) % palette.length]
+                    );
+
+                    gc.fillRect(
+                            x + offsetX + width,
+                            y + offsetY + cell * 0.25,
+                            cell * 0.7,
+                            cell * 0.55
+                    );
+                }
+            }
+        }
+    }
+
+
+
+
+    private boolean isInsideCharacter(
+            double x,
+            double y,
+            boolean stickman,
+            double stride,
+            boolean attacking,
+            double attackArmAngle,
+            double legSwing,
+            double armSwing
+    ) {
+        if (stickman) {
+            // Голова.
+            if (insideEllipse(x, y, 0, -34, 12, 12)) {
+                return true;
+            }
+
+            // Туловище.
+            if (nearSegment(x, y, 0, -20, 0, 19, 4)) {
+                return true;
+            }
+
+            // Руки — маска повторяет drawStickman().
+
+            if (attacking) {
+                // Точно повторяем направление руки из drawStickman().
+                double aimAngle = Math.toRadians(attackArmAngle + 90.0);
+                double dirX = Math.cos(aimAngle);
+                double dirY = Math.sin(aimAngle);
+
+                double shoulderX = dirX >= 0.0 ? 5.0 : -5.0;
+                double handX = shoulderX + dirX * 31.0;
+                double handY = -12.0 + dirY * 31.0;
+
+                if (nearSegment(
+                        x, y,
+                        shoulderX, -12,
+                        handX, handY,
+                        4
+                )) {
+                    return true;
+                }
+
+                boolean keepSupportArm =
+                        dirY > 0.8 && Math.abs(dirX) < 0.35;
+
+                if (keepSupportArm) {
+                    double supportX = -shoulderX;
+
+                    if (nearSegment(
+                            x, y,
+                            supportX, -12,
+                            supportX, 0,
+                            4
+                    )) {
+                        return true;
+                    }
+                }
+            } else {
+                if (nearSegment(
+                        x, y,
+                        -5, -12,
+                        -22 - armSwing * 0.4,
+                        8 + armSwing * 0.3,
+                        4
+                )) {
+                    return true;
+                }
+
+                if (nearSegment(
+                        x, y,
+                        5, -12,
+                        22 + armSwing * 0.4,
+                        8 - armSwing * 0.3,
+                        4
+                )) {
+                    return true;
+                }
+            }
+
+
+            // Ноги двигаются в соответствии с шагом.
+            return nearSegment(
+                    x, y, 0, 19,
+                    -17 + legSwing, 43, 4
+            )
+                    || nearSegment(
+                    x, y, 0, 19,
+                    17 - legSwing, 43, 4
+            );
+        }
+
+        // Голова и шея гуманоидного силуэта.
+        if (insideEllipse(x, y, 0, -41.5, 14, 13.5)
+                || insideEllipse(x, y, 0, -28.5, 6, 7.5)) {
+            return true;
+        }
+
+        // Корпус.
+        double halfWidth;
+
+        if (y >= -24 && y <= -19) {
+            halfWidth = 13 + (y + 24) * 2.8;
+        } else if (y > -19 && y <= -10) {
+            halfWidth = 27;
+        } else if (y > -10 && y <= -3) {
+            halfWidth = 27 - (y + 10) * 1.4;
+        } else if (y > -3 && y <= 19) {
+            halfWidth = 17 - (y + 3) * 0.2;
+        } else {
+            halfWidth = 0;
+        }
+
+        if (Math.abs(x) <= halfWidth) {
+            return true;
+        }
+
+        // Анимация ног: угол drawPlayerLimb задаёт направление
+        // относительно вертикального положения вниз.
+        double leftLegAngle = -legSwing;
+        double rightLegAngle = legSwing;
+        double legLength = 31;
+
+        double leftLegEndX =
+                -8 - Math.sin(Math.toRadians(leftLegAngle)) * legLength;
+        double leftLegEndY =
+                18 + Math.cos(Math.toRadians(leftLegAngle)) * legLength;
+
+        double rightLegEndX =
+                8 - Math.sin(Math.toRadians(rightLegAngle)) * legLength;
+        double rightLegEndY =
+                18 + Math.cos(Math.toRadians(rightLegAngle)) * legLength;
+
+        if (nearSegment(
+                x, y, -8, 18, leftLegEndX, leftLegEndY, 6
+        ) || nearSegment(
+                x, y, 8, 18, rightLegEndX, rightLegEndY, 6
+        )) {
+            return true;
+        }
+
+        // Анимация рук.
+
+        // Маска рук должна повторять drawPlayerSilhouette().
+        if (attacking) {
+            double aimAngle = Math.toRadians(attackArmAngle + 90.0);
+            double dirX = Math.cos(aimAngle);
+            double dirY = Math.sin(aimAngle);
+
+            double attackShoulderX = dirX >= 0.0 ? 22.0 : -22.0;
+
+            // Маска атакующей руки.
+            double attackEndX = attackShoulderX
+                    - Math.sin(Math.toRadians(attackArmAngle)) * 31.0;
+            double attackEndY = -19.0
+                    + Math.cos(Math.toRadians(attackArmAngle)) * 31.0;
+
+            if (nearSegment(
+                    x, y,
+                    attackShoulderX, -19,
+                    attackEndX, attackEndY,
+                    6
+            )) {
+                return true;
+            }
+
+            // Вспомогательная рука видна только при ударе строго вниз.
+            boolean keepSupportArm =
+                    dirY > 0.8 && Math.abs(dirX) < 0.35;
+
+            if (keepSupportArm) {
+                double supportShoulderX = -attackShoulderX;
+
+                return nearSegment(
+                        x, y,
+                        supportShoulderX, -19,
+                        supportShoulderX, -7,
+                        5
+                );
+            }
+
+            return false;
+        }
+
+        // Руки при ходьбе — углы совпадают с отрисовкой.
+        double leftArmEndX = -22
+                - Math.sin(Math.toRadians(-armSwing)) * 31.0;
+        double leftArmEndY = -19
+                + Math.cos(Math.toRadians(-armSwing)) * 31.0;
+
+        double rightArmEndX = 22
+                - Math.sin(Math.toRadians(armSwing)) * 31.0;
+        double rightArmEndY = -19
+                + Math.cos(Math.toRadians(armSwing)) * 31.0;
+
+        return nearSegment(
+                x, y, -22, -19,
+                leftArmEndX, leftArmEndY, 6
+        ) || nearSegment(
+                x, y, 22, -19,
+                rightArmEndX, rightArmEndY, 6
+        );
+
+    }
+
+
+    private boolean insideEllipse(
+            double x,
+            double y,
+            double centerX,
+            double centerY,
+            double radiusX,
+            double radiusY
+    ) {
+        double dx = (x - centerX) / radiusX;
+        double dy = (y - centerY) / radiusY;
+
+        return dx * dx + dy * dy <= 1.0;
+    }
+
+    private boolean nearSegment(
+            double px,
+            double py,
+            double x1,
+            double y1,
+            double x2,
+            double y2,
+            double radius
+    ) {
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+
+        double lengthSquared = dx * dx + dy * dy;
+
+        double t = lengthSquared == 0
+                ? 0
+                : ((px - x1) * dx + (py - y1) * dy)
+                / lengthSquared;
+
+        t = Math.max(0, Math.min(1, t));
+
+        double nearestX = x1 + t * dx;
+        double nearestY = y1 + t * dy;
+
+        double distanceX = px - nearestX;
+        double distanceY = py - nearestY;
+
+        return distanceX * distanceX + distanceY * distanceY
+                <= radius * radius;
+    }
+
+    /**
+     * Рисует конечность от заданного сустава.
+     * Угол задаётся в градусах.
+     */
+    private void drawPlayerLimb(
+            double pivotX,
+            double pivotY,
+            double angle,
+            double length,
+            double thickness
+    ) {
+        gc.save();
+
+        gc.translate(pivotX, pivotY);
+        gc.rotate(angle);
+
+        gc.fillRoundRect(
+                -thickness / 2.0,
+                0,
+                thickness,
+                length,
+                thickness,
+                thickness
+        );
+
+        gc.restore();
+    }
+
+
+    /**
+     * Отрисовывает спрайт экипированного копья
+     * поверх персонажа, направляя его к курсору.
+     */
+
+    /**
+     * Отрисовывает экипированное оружие поверх персонажа.
+     *
+     * Дальнобойное оружие отображается постоянно и поворачивается
+     * вслед за прицелом. Оружие ближнего боя отображается во время
+     * соответствующей анимации атаки.
+     */
+
+    private void updateCurseShieldEffects(double deltaSeconds) {
+        long now = System.nanoTime();
+        if (now >= curseDefenseUntilNanos) curseDefenseStacks = 0;
+        if (now >= curseSpeedUntilNanos) curseSpeedStacks = 0;
+        if (now >= curseDamageUntilNanos) curseDamageStacks = 0;
+        if (localPlayer == null || !isArtifactEquipped(Artifact.MATERIAL_CURSE_SHIELD)
+                || client.isConnected()) return;
+        curseProjectileSpawnTimer -= deltaSeconds;
+        if (curseProjectileSpawnTimer <= 0.0) {
+            curseProjectileSpawnTimer = 3.0 + Math.random() * 2.0;
+            double angle = Math.random() * Math.PI * 2.0;
+            float centerX = localPlayer.renderX + (float) PLAYER_SIZE / 2f;
+            float centerY = localPlayer.renderY + (float) PLAYER_SIZE / 2f;
+            float spawnRadius = 440f;
+            float x = centerX + (float) Math.cos(angle) * spawnRadius;
+            float y = centerY + (float) Math.sin(angle) * spawnRadius;
+            curseProjectiles.add(new CurseProjectile(x, y));
+        }
+    }
+
+    private void updateCurseProjectiles(double deltaSeconds, float playerCenterX, float playerCenterY) {
+        if (!isArtifactEquipped(Artifact.MATERIAL_CURSE_SHIELD)) {
+            curseProjectiles.clear();
+            return;
+        }
+        long now = System.nanoTime();
+        Iterator<CurseProjectile> iterator = curseProjectiles.iterator();
+        while (iterator.hasNext()) {
+            CurseProjectile projectile = iterator.next();
+            float dx = playerCenterX - projectile.x;
+            float dy = playerCenterY - projectile.y;
+            float distance = (float) Math.sqrt(dx * dx + dy * dy);
+            if (distance < 22f) {
+                if (now <= parryActiveUntilNanos) {
+                    parryActiveUntilNanos = 0L;
+                    grantCurseParryBuff();
+                } else {
+                    damageLocalPlayer(12f);
+                }
+                iterator.remove();
+                continue;
+            }
+            if (distance > 0.001f) {
+                float move = (float) (260.0 * deltaSeconds);
+                projectile.x += dx / distance * move;
+                projectile.y += dy / distance * move;
+            }
+        }
+    }
+
+    private void grantCurseParryBuff() {
+        int effect = (int) (Math.random() * 5.0);
+        long expires = System.nanoTime() + 6_000_000_000L;
+        switch (effect) {
+            case 0 -> { curseDefenseStacks = Math.min(4, curseDefenseStacks + 1); curseDefenseUntilNanos = expires; }
+            case 1 -> { curseSpeedStacks = Math.min(4, curseSpeedStacks + 1); curseSpeedUntilNanos = expires; }
+            case 2 -> { curseDamageStacks = Math.min(4, curseDamageStacks + 1); curseDamageUntilNanos = expires; }
+            case 3 -> fireCurseBoltAtNearestTarget();
+            case 4 -> { playerHp = Math.min(playerMaxHp, playerHp + 4f); updatePlayerHud(); }
+        }
+        showDamagePopup(localPlayer.renderX + (float) PLAYER_SIZE / 2f,
+                localPlayer.renderY - 8f, 0f, DamageType.ELECTRIC);
+    }
+
+    private void fireCurseBoltAtNearestTarget() {
+        LocalCombatTarget nearest = null;
+        float best = Float.MAX_VALUE;
+        float px = localPlayer.renderX + (float) PLAYER_SIZE / 2f;
+        float py = localPlayer.renderY + (float) PLAYER_SIZE / 2f;
+        for (LocalCombatTarget target : combatSystem.getTargets()) {
+            if (target == null || !target.isAlive()) continue;
+            float dx = target.getX() + target.getWidth() / 2f - px;
+            float dy = target.getY() + target.getHeight() / 2f - py;
+            float distance = dx * dx + dy * dy;
+            if (distance < best) { best = distance; nearest = target; }
+        }
+        if (nearest != null) {
+            float damage = 12f;
+            nearest.damage(damage);
+            showDamagePopup(nearest.getX() + nearest.getWidth() / 2f,
+                    nearest.getY() + nearest.getHeight() / 2f, damage, DamageType.ELECTRIC);
+        }
+    }
+
+    private void spawnVengefulSpecter() {
+        // Мстительный спектр не может быть парирован повторно; наносит урон ближайшей цели.
+        fireCurseBoltAtNearestTarget();
+    }
+
+    private void renderCurseProjectiles() {
+        if (curseProjectiles.isEmpty()) return;
+        gc.save();
+        for (CurseProjectile projectile : curseProjectiles) {
+            gc.setFill(Color.web("#2A0E36"));
+            gc.fillOval(projectile.x - 8, projectile.y - 8, 16, 16);
+            gc.setStroke(Color.web("#D946EF"));
+            gc.setLineWidth(2.0);
+            gc.strokeOval(projectile.x - 10, projectile.y - 10, 20, 20);
+            gc.setFill(Color.web("#F5D0FE", 0.8));
+            gc.fillOval(projectile.x - 3, projectile.y - 3, 6, 6);
+        }
+        gc.restore();
+    }
+
+    private void configureRangedArtifactModifiers(Weapon weapon) {
+        float damageMultiplier = 1.0f;
+        float spreadRadians = 0f;
+        boolean homing = false;
+        boolean unstable = false;
+        for (int slot = 0; slot < inventory.getArtifactSlotCount(); slot++) {
+            Artifact artifact = inventory.getEquippedArtifact(slot);
+            if (artifact == Artifact.AMMO_MODIFIER) {
+                damageMultiplier *= artifact.getRangedDamageMultiplier();
+                homing = true;
+            } else if (artifact == Artifact.UNSTABLE_AUTOMATION_MECHANISM) {
+                unstable = true;
+            }
+        }
+        if (unstable && weapon != null && weapon.getType() == WeaponType.RANGED) {
+            int count = weapon.getPrimaryAttack() == null
+                    ? 1 : weapon.getPrimaryAttack().getProjectileCount();
+            // У очередей разброс больше; у одиночного выстрела появляется базовый разброс.
+            spreadRadians = count > 1 ? 0.34f : 0.12f;
+        }
+        rangedProjectileSystem.setArtifactModifiers(damageMultiplier, spreadRadians, homing);
+    }
+
+    private List<Weapon> getMechanicalSquireWeapons() {
+        List<Weapon> result = new ArrayList<>();
+        if (!isArtifactEquipped(Artifact.MECHANICAL_SQUIRE)) return result;
+        for (Weapon weapon : inventory.getWeapons()) {
+            if (weapon != null && weapon.getType() == WeaponType.MELEE) result.add(weapon);
+        }
+        return result;
+    }
+
+    private double getSquireAngleForIndex(int index, int count) {
+        return mechanicalSquireAngle + Math.PI * 2.0 * index / Math.max(1, count);
+    }
+
+    private boolean selectMechanicalSquireWeapon(double mouseScreenX, double mouseScreenY) {
+        if (localPlayer == null) return false;
+        List<Weapon> weapons = getMechanicalSquireWeapons();
+        if (weapons.isEmpty()) return false;
+        double centerX = localPlayer.renderX + PLAYER_SIZE / 2.0;
+        double centerY = localPlayer.renderY + PLAYER_SIZE / 2.0;
+        double worldMouseX = centerX + mouseScreenX - canvas.getWidth() / 2.0;
+        double worldMouseY = centerY + mouseScreenY - canvas.getHeight() / 2.0;
+        for (int i = 0; i < weapons.size(); i++) {
+            double angle = getSquireAngleForIndex(i, weapons.size());
+            double x = centerX + Math.cos(angle) * 64.0;
+            double y = centerY + Math.sin(angle) * 64.0;
+            double dx = worldMouseX - x;
+            double dy = worldMouseY - y;
+            if (dx * dx + dy * dy <= 24.0 * 24.0) {
+                inventory.equipMeleeWeapon(weapons.get(i));
+                meleeActive = true;
+                refreshCharacterPanel();
+                saveCurrentLoadout();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateMechanicalSquire(double deltaSeconds, float centerX, float centerY) {
+        List<Weapon> weapons = getMechanicalSquireWeapons();
+        if (weapons.isEmpty()) {
+            mechanicalSquireLastHitNanos.clear();
+            return;
+        }
+        mechanicalSquireAngle += deltaSeconds * 2.4;
+        mechanicalSquireTickTimer += deltaSeconds;
+        if (mechanicalSquireTickTimer < 0.22) return;
+        mechanicalSquireTickTimer = 0.0;
+        long now = System.nanoTime();
+        for (int i = 0; i < weapons.size(); i++) {
+            double angle = getSquireAngleForIndex(i, weapons.size());
+            float orbitX = centerX + (float) Math.cos(angle) * 64f;
+            float orbitY = centerY + (float) Math.sin(angle) * 64f;
+            Weapon weapon = weapons.get(i);
+            float damage = DamageCalculator.calculateTickDamage(weapon, PLAYER_ATTACK);
+            for (LocalCombatTarget target : combatSystem.getTargets()) {
+                if (target == null || !target.isAlive()) continue;
+                float tx = target.getX() + target.getWidth() / 2f;
+                float ty = target.getY() + target.getHeight() / 2f;
+                float dx = tx - orbitX;
+                float dy = ty - orbitY;
+                float reach = Math.max(20f, target.getWidth() * 0.55f);
+                if (dx * dx + dy * dy > reach * reach) continue;
+                String key = weapon.getId() + "|" + target.getId();
+                long previous = mechanicalSquireLastHitNanos.getOrDefault(key, 0L);
+                if (now - previous < 220_000_000L) continue;
+                target.damage(damage);
+                mechanicalSquireLastHitNanos.put(key, now);
+                showDamagePopup(tx, ty, damage, DamageType.PHYSICAL);
+            }
+        }
+    }
+
+    private void renderMechanicalSquire() {
+        List<Weapon> weapons = getMechanicalSquireWeapons();
+        if (localPlayer == null || weapons.isEmpty()) return;
+        double centerX = localPlayer.renderX + PLAYER_SIZE / 2.0;
+        double centerY = localPlayer.renderY + PLAYER_SIZE / 2.0;
+        gc.save();
+        for (int i = 0; i < weapons.size(); i++) {
+            Weapon weapon = weapons.get(i);
+            double angle = getSquireAngleForIndex(i, weapons.size());
+            double x = centerX + Math.cos(angle) * 64.0;
+            double y = centerY + Math.sin(angle) * 64.0;
+            Image sprite = weaponSpriteManager.getSprite(weapon.getId());
+            if (sprite != null) {
+                gc.save();
+                gc.translate(x, y);
+                gc.rotate(Math.toDegrees(angle) + 90.0);
+                gc.drawImage(sprite, -15, -15, 30, 30);
+                gc.restore();
+            } else {
+                gc.setFill(Color.web("#F2D28B"));
+                gc.fillOval(x - 9, y - 9, 18, 18);
+                gc.setStroke(Color.WHITE);
+                gc.strokeOval(x - 9, y - 9, 18, 18);
+            }
+            gc.setStroke(Color.color(0.95, 0.82, 0.48, 0.55));
+            gc.strokeOval(x - 19, y - 19, 38, 38);
+        }
+        gc.restore();
+    }
+
+    /**
+     * Рисует экипированное оружие с учётом положения руки
+     * и направления атаки.
+     *
+     * foreground == false — оружие позади персонажа.
+     * foreground == true  — оружие перед персонажем,
+     *                       только при атаке вниз.
+     */
+    private void renderEquippedWeapon(boolean foreground) {
+        if (localPlayer == null) {
+            return;
+        }
+
+        Weapon weapon = meleeActive
+                ? inventory.getEquippedMeleeWeapon()
+                : inventory.getEquippedRangedWeapon();
+
+        if (weapon == null) {
+            return;
+        }
+
+        Image sprite = weaponSpriteManager.getSprite(weapon.getId());
+
+        if (sprite == null) {
+            return;
+        }
+
+        double playerX =
+                localPlayer.renderX + PLAYER_SIZE / 2.0;
+
+        double playerY =
+                localPlayer.renderY + PLAYER_SIZE / 2.0;
+
+        double angle;
+        double distance;
+        double size;
+
+        /*
+         * ДАЛЬНИЙ БОЙ
+         */
+        if (weapon.getType() == WeaponType.RANGED) {
+            boolean attacking =
+                    attackHeld
+                            || secondaryAttackHeld
+                            || doomStarCharging;
+
+            if (!attacking) {
+                return;
+            }
+
+            float[] direction = getAimDirection(mouseX, mouseY);
+
+            angle = Math.atan2(direction[1], direction[0]);
+
+            // Стреляем вниз — оружие будет перед персонажем.
+            boolean attackDown = direction[1] > 0.35f;
+
+            if (foreground != attackDown) {
+                return;
+            }
+
+            size = 96.0;
+
+            // Переносим оружие из центра тела к руке.
+            distance = 12.0;
+
+        } else {
+            /*
+             * БЛИЖНИЙ БОЙ
+             */
+            if (!meleeActive) {
+                return;
+            }
+
+            SwordSwing activeSwing = null;
+
+            for (SwordSwing swing : combatSystem.getActiveSwings()) {
+                activeSwing = swing;
+                break;
+            }
+
+            if (activeSwing == null) {
+                return;
+            }
+
+            angle = activeSwing.getWorldAngleRadians();
+
+
+            // Вниз направлены атаки с положительной составляющей Y.
+            boolean attackDown = Math.sin(angle) > 0.35;
+
+            if (foreground != attackDown) {
+                return;
+            }
+
+            double progress = activeSwing.getProgress();
+
+            size = 112.0;
+
+            if (activeSwing.getStyle() == AttackStyle.THRUST
+                    || activeSwing.getStyle() == AttackStyle.STAB) {
+
+                // При уколе оружие выдвигается из руки вперёд.
+                double extension;
+
+                if (progress < 0.65) {
+                    extension = progress / 0.65;
+                } else {
+                    extension = 1.0
+                            - (progress - 0.65) / 0.35 * 0.25;
+                }
+
+                extension = Math.max(0.0, Math.min(1.0, extension));
+
+                distance = 24.0 + 38.0 * extension;
+
+            } else {
+                // Точка удержания меча остаётся около руки.
+                distance = 24.0
+                        + Math.sin(progress * Math.PI) * 8.0;
+            }
+        }
+
+
+
+        double dirX = Math.cos(angle);
+        double dirY = Math.sin(angle);
+        boolean attackUp = dirY < -0.35;
+
+// Плечо выбирается со стороны атаки.
+        double shoulderX = dirX >= 0.0 ? 22.0 : -22.0;
+        double shoulderY = -19.0;
+
+// Запястье ведущей руки.
+        double wristX = playerX + shoulderX + dirX * 31.0;
+        double wristY = playerY + shoulderY + dirY * 31.0;
+
+        // Позиция спрайта относительно кисти — исходный расчёт.
+        double handX = wristX + dirX * distance;
+        double handY = wristY + dirY * distance;
+
+        // При атаке вверх немного поднимаем оружие к голове.
+        // Смещение не меняет положение запястья и направление удара.
+        if (meleeActive && attackUp) {
+            handY -= 20.0;
+        }
+
+// Небольшие визуальные поправки для читаемости позы.
+        if (dirY > 0.65) {
+            // Атака вниз: опускаем оружие ниже плеч.
+            handY += 18.0;
+        } else if (Math.abs(dirX) > 0.65) {
+            // Атака влево/вправо: чуть ниже и в сторону цели.
+            handX += Math.signum(dirX) * 7.0;
+            handY += 8.0;
+        }
+
+
+        gc.save();
+
+        gc.translate(handX, handY);
+
+// Спрайты дальнего боя изначально направлены слева направо.
+// Спрайты оружия ближнего боя сохраняют прежний угол +45°.
+        double spriteAngle =
+                Math.toDegrees(angle)
+                        + (weapon.getType() == WeaponType.RANGED ? 0.0 : 45.0);
+
+        gc.rotate(spriteAngle);
+
+        gc.drawImage(
+                sprite,
+                -size / 2.0,
+                -size / 2.0,
+                size,
+                size
+        );
+
+        gc.restore();
+
+    }
+
+
 
     /*
      * =====================================================
@@ -5198,6 +7405,112 @@ public class WorldScene {
         return Direction.DOWN;
     }
 
+    private Color getDamageColor(DamageType damageType) {
+        if (damageType == null) {
+            return Color.web("#E8E8E8");
+        }
+
+        return switch (damageType) {
+            case PHYSICAL -> Color.web("#E8E8E8");
+            case FIRE     -> Color.web("#FF5733");
+            case WIND     -> Color.web("#64E8B7");
+            case DUST     -> Color.web("#C9A477");
+            case ICE      -> Color.web("#65CFFF");
+            case ELECTRIC -> Color.web("#F5E642");
+        };
+    }
+
+
+    private void performDawnAttack(float directionX, float directionY) {
+        Weapon weapon = getCurrentWeapon();
+
+        if (!isDawn(weapon) || localPlayer == null) {
+            return;
+        }
+
+        int hitIndex = dawnComboIndex;
+        float multiplier = DAWN_COMBO_MULTIPLIERS[hitIndex];
+
+        float centerX = localPlayer.renderX + (float) PLAYER_SIZE / 2f;
+        float centerY = localPlayer.renderY + (float) PLAYER_SIZE / 2f;
+
+        DamageType damageType = hitIndex == 4
+                ? DamageType.FIRE
+                : DamageType.PHYSICAL;
+
+        boolean attacked = combatSystem.attack(
+                weapon,
+                PLAYER_ATTACK,
+                centerX,
+                centerY,
+                directionX,
+                directionY,
+                multiplier,
+                damageType
+        );
+
+        if (!attacked) {
+            return;
+        }
+
+        dawnComboIndex = (dawnComboIndex + 1) % DAWN_COMBO_MULTIPLIERS.length;
+
+        if (dawnComboIndex == 4) {
+            attackCooldown = DAWN_FINISHER_DELAY;
+        } else if (dawnComboIndex == 0) {
+            attackCooldown = getAttackInterval();
+        } else {
+            attackCooldown = DAWN_COMBO_INTERVAL;
+        }
+
+        System.out.println(
+                "DAWN COMBO: hit " + (hitIndex + 1)
+                        + ", multiplier x" + multiplier
+        );
+    }
+
+    private void performDawnFinisher() {
+        Weapon weapon = getCurrentWeapon();
+
+        if (!isDawn(weapon) || localPlayer == null) {
+            return;
+        }
+
+        float[] direction = getAimDirection(mouseX, mouseY);
+
+        float length = (float) Math.sqrt(
+                direction[0] * direction[0]
+                        + direction[1] * direction[1]
+        );
+
+        if (length < 0.0001f) {
+            return;
+        }
+
+        direction[0] /= length;
+        direction[1] /= length;
+
+        float centerX = localPlayer.renderX + (float) PLAYER_SIZE / 2f;
+        float centerY = localPlayer.renderY + (float) PLAYER_SIZE / 2f;
+
+        boolean attacked = combatSystem.attack(
+                weapon,
+                PLAYER_ATTACK,
+                centerX,
+                centerY,
+                direction[0],
+                direction[1],
+                2.0f,
+                DamageType.FIRE
+        );
+
+        if (attacked) {
+            dawnComboIndex = 0;
+            System.out.println("DAWN TRICK: finisher");
+        }
+    }
+
+
     private void sendAttack(
             double cursorX,
             double cursorY,
@@ -5221,6 +7534,7 @@ public class WorldScene {
         }
 
         Weapon weapon = getCurrentWeapon();
+        configureRangedArtifactModifiers(weapon);
         if (isGungnirLauncher(weapon)) {
 
             Weapon source = getGungnirLauncherSource();
@@ -5278,6 +7592,25 @@ public class WorldScene {
                 );
 
         /*
+         * Для дальнобойного оружия переносим начало снаряда
+         * из центра персонажа к кончику отображаемого спрайта.
+         *
+         * Спрайт повёрнут на +45°, поэтому предполагаем,
+         * что его кончик изначально находится вверху справа.
+         */
+        if (weapon.getType() == WeaponType.RANGED) {
+            double weaponSize = 96.0;
+            double weaponCenterOffset = 12.0;
+
+            double muzzleOffset =
+                    weaponCenterOffset + weaponSize / 2.0;
+
+            centerX += (float) (direction[0] * muzzleOffset);
+            centerY += (float) (direction[1] * muzzleOffset);
+        }
+
+
+        /*
          * =====================================================
          * RANGED
          * =====================================================
@@ -5329,53 +7662,63 @@ public class WorldScene {
                 return;
             }
 
-            Weapon projectileWeapon = weapon;
-
+            // Выстрел из пускового устройства «Гунгнир»
             if (isGungnirLauncher(weapon)) {
-
                 Weapon source = getGungnirLauncherSource();
 
+                // Без экипированного копья выстрел невозможен.
                 if (source == null) {
                     return;
                 }
 
-                projectileWeapon = source;
+                boolean fired = rangedProjectileSystem.fireSpear(
+                        centerX,
+                        centerY,
+                        direction[0],
+                        direction[1],
+                        source,
+                        PLAYER_ATTACK,
+                        isGungnir(source)
+                );
+
+                if (!fired) {
+                    return;
+                }
+
+                attackCooldown = getAttackInterval();
+                return;
             }
 
+// Обычное дальнобойное оружие — прежняя логика.
+            Weapon projectileWeapon = weapon;
             boolean fired;
 
             if (isAngelicDoom(weapon)) {
-
-                fired =
-                        rangedProjectileSystem.fire(
-                                centerX,
-                                centerY,
-                                direction[0],
-                                direction[1],
-                                projectileWeapon,
-                                PLAYER_ATTACK,
-                                mode
-                        );
-
+                fired = rangedProjectileSystem.fire(
+                        centerX,
+                        centerY,
+                        direction[0],
+                        direction[1],
+                        projectileWeapon,
+                        PLAYER_ATTACK,
+                        mode
+                );
             } else {
-
-                fired =
-                        rangedProjectileSystem.fire(
-                                centerX,
-                                centerY,
-                                direction[0],
-                                direction[1],
-                                projectileWeapon,
-                                PLAYER_ATTACK
-                        );
+                fired = rangedProjectileSystem.fire(
+                        centerX,
+                        centerY,
+                        direction[0],
+                        direction[1],
+                        projectileWeapon,
+                        PLAYER_ATTACK
+                );
             }
 
             if (!fired) {
                 return;
             }
 
-            attackCooldown =
-                    getAttackInterval();
+            attackCooldown = getAttackInterval();
 
             System.out.println(
                     "RANGED ATTACK: "
@@ -5471,6 +7814,25 @@ public class WorldScene {
                 );
 
         /*
+         * Для дальнобойного оружия переносим начало снаряда
+         * из центра персонажа к кончику отображаемого спрайта.
+         *
+         * Спрайт повёрнут на +45°, поэтому предполагаем,
+         * что его кончик изначально находится вверху справа.
+         */
+        if (weapon.getType() == WeaponType.RANGED) {
+            double weaponSize = 96.0;
+            double weaponCenterOffset = 12.0;
+
+            double muzzleOffset =
+                    weaponCenterOffset + weaponSize / 2.0;
+
+            centerX += (float) (direction[0] * muzzleOffset);
+            centerY += (float) (direction[1] * muzzleOffset);
+        }
+
+
+        /*
          * =====================================================
          * RANGED
          * =====================================================
@@ -5523,13 +7885,65 @@ public class WorldScene {
                 return;
             }
 
+
+            if (isGungnirLauncher(weapon)) {
+                Weapon source = getGungnirLauncherSource();
+
+                if (source == null) {
+                    System.out.println(
+                            "GUNGNIR LAUNCHER: no spear equipped"
+                    );
+                    return;
+                }
+
+                System.out.println(
+                        "GUNGNIR LAUNCHER SOURCE: "
+                                + source.getName()
+                                + ", id=" + source.getId()
+                                + ", weaponAttack=" + source.getAttack()
+                );
+
+                boolean fired = rangedProjectileSystem.fireSpear(
+                        centerX,
+                        centerY,
+                        direction[0],
+                        direction[1],
+                        source,
+                        PLAYER_ATTACK,
+                        isGungnir(source)
+                );
+
+                if (!fired) {
+                    System.out.println(
+                            "GUNGNIR LAUNCHER: fireSpear returned false"
+                    );
+                    return;
+                }
+
+                attackCooldown = getAttackInterval();
+                return;
+            }
+
             boolean fired = rangedProjectileSystem.fire(
-                    centerX, centerY, direction[0], direction[1], weapon, PLAYER_ATTACK
+                    centerX,
+                    centerY,
+                    direction[0],
+                    direction[1],
+                    weapon,
+                    PLAYER_ATTACK
             );
-            if (!fired) return;
+
+            if (!fired) {
+                return;
+            }
+
             attackCooldown = getAttackInterval();
-            System.out.println("RANGED ATTACK: " + weapon.getName());
+
+            System.out.println(
+                    "RANGED ATTACK: " + weapon.getName()
+            );
             return;
+
         }
 
         /*
@@ -5540,6 +7954,11 @@ public class WorldScene {
 
         if (weapon.getType()
                 == WeaponType.MELEE) {
+
+            if (isDawn(weapon)) {
+                performDawnAttack(direction[0], direction[1]);
+                return;
+            }
 
             boolean attacked =
                     combatSystem.attack(
@@ -5614,7 +8033,6 @@ public class WorldScene {
         };
     }
 
-
     private void renderRangedProjectiles() {
 
         for (RangedProjectile projectile :
@@ -5631,7 +8049,41 @@ public class WorldScene {
             float dx = projectile.getDirectionX();
             float dy = projectile.getDirectionY();
 
+
+            if (rangedProjectileSystem.isSpearProjectile(projectile)) {
+                if (gungnirProjectileImage == null) {
+                    gungnirProjectileImage = loadRequiredImage(
+                            "/assets/weapons/spears/gungnir.png"
+                    );
+                }
+
+                // Исходный спрайт копья направлен примерно на 45° вверх-вправо.
+            // Компенсируем этот наклон, чтобы кончик совпадал с направлением полёта.
+                double angle = Math.toDegrees(Math.atan2(dy, dx)) + 45.0;
+
+                // Используем размер оружия, сопоставимый с размером в руках.
+                double spearSize = 96.0;
+
+                gc.save();
+                gc.translate(x, y);
+                gc.rotate(angle);
+
+                gc.drawImage(
+                        gungnirProjectileImage,
+                        -spearSize / 2.0,
+                        -spearSize / 2.0,
+                        spearSize,
+                        spearSize
+                );
+
+                gc.restore();
+                continue;
+            }
+
+
             float trail = 18f;
+
+
 
             gc.save();
 
@@ -5791,6 +8243,22 @@ public class WorldScene {
         for (SwordSwing swing :
                 combatSystem.getActiveSwings()) {
 
+            // Если для экипированного оружия есть спрайт,
+            // не рисуем его повторно старым способом через линии.
+            Weapon equippedWeapon = inventory.getEquippedMeleeWeapon();
+
+            if (equippedWeapon != null
+                    && weaponSpriteManager.getSprite(equippedWeapon.getId()) != null) {
+                continue;
+            }
+
+            // Копья отображаются собственными спрайтами.
+            // Не рисуем для них старый процедурный клинок.
+            if (swing.getStyle() == AttackStyle.THRUST
+                    || swing.getStyle() == AttackStyle.STAB) {
+                continue;
+            }
+
             gc.save();
 
             float startX =
@@ -5896,13 +8364,15 @@ public class WorldScene {
     private void showDamagePopup(
             float x,
             float y,
-            float damage
+            float damage,
+            DamageType damageType
     ) {
         damagePopups.add(
                 new DamagePopup(
                         x,
                         y,
-                        damage
+                        damage,
+                        damageType
                 )
         );
     }
@@ -6267,8 +8737,43 @@ public class WorldScene {
         data.player.y = (float) localPlayer.serverY;
         data.player.locationX = locationX;
         data.player.locationY = locationY;
+        data.difficulty = this.difficulty;
+        data.player.oneHpMode = oneHpMode;
+        data.player.hardcoreMode = hardcoreMode;
 
-        data.world.currentLocationId = locationX + "_" + locationY;
+        data.world.currentLocationId =
+                currentLocation != null
+                        ? currentLocation.getId()
+                        : "main_world";
+
+        // Сохраняем актуальный инвентарь оружия и экипировку, включая пустые слоты.
+        data.weaponIds.clear();
+        for (Weapon weapon : inventory.getWeapons()) {
+            if (weapon != null) {
+                data.weaponIds.add(weapon.getId());
+            }
+        }
+
+        Weapon equippedMelee = inventory.getEquippedMeleeWeapon();
+        Weapon equippedRanged = inventory.getEquippedRangedWeapon();
+        data.equippedMelee = equippedMelee == null ? null : equippedMelee.getId();
+        data.equippedRanged = equippedRanged == null ? null : equippedRanged.getId();
+        data.meleeActive = meleeActive;
+
+        // Сохраняем все артефакты в инвентаре и ID в каждом слоте отдельно.
+        data.artifactIds.clear();
+        for (Artifact artifact : inventory.getArtifacts()) {
+            if (artifact != null) {
+                data.artifactIds.add(artifact.getId());
+            }
+        }
+        data.equippedArtifactIds.clear();
+        for (int artifactSlot = 0;
+             artifactSlot < inventory.getArtifactSlotCount();
+             artifactSlot++) {
+            Artifact artifact = inventory.getEquippedArtifact(artifactSlot);
+            data.equippedArtifactIds.add(artifact == null ? null : artifact.getId());
+        }
 
         try {
             SaveManager.save(data);
@@ -6285,22 +8790,33 @@ public class WorldScene {
     }
 
 
+    private static class CurseProjectile {
+        private float x;
+        private float y;
+        private CurseProjectile(float x, float y) { this.x = x; this.y = y; }
+    }
+
     private static class DamagePopup {
 
         private final float x;
         private final float y;
         private final float damage;
+        private final DamageType damageType;
 
         private double age;
 
         private DamagePopup(
                 float x,
                 float y,
-                float damage
+                float damage,
+                DamageType damageType
         ) {
             this.x = x;
             this.y = y;
             this.damage = damage;
+            this.damageType = damageType != null
+                    ? damageType
+                    : DamageType.PHYSICAL;
             this.age = 0;
         }
     }

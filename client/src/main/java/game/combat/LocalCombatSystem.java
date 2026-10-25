@@ -2,6 +2,7 @@ package game.combat;
 
 import game.save.Difficulty;
 import game.save.DifficultySettings;
+import game.weapon.AttackStyle;
 import game.weapon.Weapon;
 import game.weapon.WeaponType;
 
@@ -23,6 +24,8 @@ public class LocalCombatSystem {
             new ArrayList<>();
 
     private final Map<SwordSwing, Set<String>> hitTargets =
+            new HashMap<>();
+    private final Map<SwordSwing, DamageType> swingDamageTypes =
             new HashMap<>();
 
     private Consumer<LocalCombatHit> hitListener;
@@ -82,9 +85,11 @@ public class LocalCombatSystem {
         return activeSwings;
     }
 
+
     /**
-     * Создаёт атаку ближнего боя
-     * с использованием конкретного оружия.
+     * Обычная атака ближнего боя.
+     * Сохраняем старую сигнатуру для совместимости
+     * с остальными вызовами в проекте.
      */
     public boolean attack(
             Weapon weapon,
@@ -94,13 +99,63 @@ public class LocalCombatSystem {
             float directionX,
             float directionY
     ) {
+        return attack(
+                weapon,
+                playerAttack,
+                originX,
+                originY,
+                directionX,
+                directionY,
+                1.0f,
+                null
+        );
+    }
 
+    /**
+     * Атака ближнего боя с настраиваемым множителем
+     * урона и возможностью переопределить его тип.
+     *
+     * damageMultiplier — множитель урона:
+     * 0.4f = 40%, 2.0f = 200%.
+     *
+     * damageTypeOverride — принудительный тип урона.
+     * null означает использовать тип из оружия.
+     */
+    public boolean attack(
+            Weapon weapon,
+            float playerAttack,
+            float originX,
+            float originY,
+            float directionX,
+            float directionY,
+            float damageMultiplier,
+            DamageType damageTypeOverride
+    ) {
         if (weapon == null) {
             return false;
         }
 
         if (weapon.getType() != WeaponType.MELEE) {
             return false;
+        }
+
+        AttackDefinition attackDefinition =
+                weapon.getPrimaryAttack();
+
+        DamageType damageType = DamageType.PHYSICAL;
+
+        if (attackDefinition != null
+                && attackDefinition.getDamageParts() != null
+                && !attackDefinition.getDamageParts().isEmpty()
+                && attackDefinition.getDamageParts().get(0).getType() != null) {
+
+            damageType =
+                    attackDefinition.getDamageParts().get(0).getType();
+        }
+
+        // Если передан отдельный тип урона, используем его.
+        if (damageTypeOverride != null) {
+            damageType = damageTypeOverride;
         }
 
         float baseDamage =
@@ -117,31 +172,27 @@ public class LocalCombatSystem {
                 weapon.getQuality()
         );
 
-        SwordSwing swing =
-                new SwordSwing(
-                        originX,
-                        originY,
-                        directionX,
-                        directionY,
-                        damage,
-                        weapon.getAttackStyle()
-                );
+        // Применяем множитель конкретного удара комбо.
+        damage *= Math.max(0.0f, damageMultiplier);
 
-        activeSwings.add(
-                swing
+        SwordSwing swing = new SwordSwing(
+                originX,
+                originY,
+                directionX,
+                directionY,
+                damage,
+                weapon.getAttackStyle()
         );
 
-        hitTargets.put(
-                swing,
-                new HashSet<>()
-        );
+        swingDamageTypes.put(swing, damageType);
+        activeSwings.add(swing);
+        hitTargets.put(swing, new HashSet<>());
 
-        processSwingCollision(
-                swing
-        );
+        processSwingCollision(swing);
 
         return true;
     }
+
 
     public void update() {
 
@@ -200,9 +251,12 @@ public class LocalCombatSystem {
                 hitTargets.remove(
                         swing
                 );
+                swingDamageTypes.remove(swing);
             }
         }
     }
+
+
 
     private void processSwingCollision(
             SwordSwing swing
@@ -274,12 +328,62 @@ public class LocalCombatSystem {
                                 targetId,
                                 hitX,
                                 hitY,
-                                damage
+                                damage,
+                                swingDamageTypes.getOrDefault(
+                                        swing,
+                                        DamageType.PHYSICAL
+                                )
                         )
                 );
             }
         }
     }
+
+    public boolean attackWithStyleAtOrigin(
+            Weapon weapon,
+            float playerAttack,
+            float originX,
+            float originY,
+            float directionX,
+            float directionY,
+            AttackStyle style,
+            boolean fixedOrigin
+    ) {
+        if (weapon == null || weapon.getType() != WeaponType.MELEE) {
+            return false;
+        }
+
+        float baseDamage = DamageCalculator.calculateTickDamage(
+                weapon,
+                playerAttack
+        );
+
+        float damage = difficulty == null
+                ? baseDamage
+                : DifficultySettings.weaponDamage(
+                difficulty,
+                baseDamage,
+                weapon.getQuality()
+        );
+
+        SwordSwing swing = new SwordSwing(
+                originX,
+                originY,
+                directionX,
+                directionY,
+                damage,
+                style,
+                fixedOrigin
+        );
+
+        swingDamageTypes.put(swing, DamageType.PHYSICAL);
+        activeSwings.add(swing);
+        hitTargets.put(swing, new HashSet<>());
+
+        processSwingCollision(swing);
+        return true;
+    }
+
 
     public void damageArea(
             float centerX,
@@ -287,68 +391,68 @@ public class LocalCombatSystem {
             float radius,
             float damage
     ) {
+        damageArea(
+                centerX,
+                centerY,
+                radius,
+                damage,
+                DamageType.PHYSICAL
+        );
+    }
 
+    public void damageArea(
+            float centerX,
+            float centerY,
+            float radius,
+            float damage,
+            DamageType damageType
+    ) {
         if (radius <= 0f || damage <= 0f) {
             return;
         }
 
         damage = scalePlayerDamage(damage);
 
-        float radiusSquared =
-                radius * radius;
+        if (damageType == null) {
+            damageType = DamageType.PHYSICAL;
+        }
 
-        for (LocalCombatTarget target :
-                targets.values()) {
+        float radiusSquared = radius * radius;
 
+        for (LocalCombatTarget target : targets.values()) {
             if (target == null || !target.isAlive()) {
                 continue;
             }
 
             float targetCenterX =
-                    target.getX()
-                            + target.getWidth() / 2f;
+                    target.getX() + target.getWidth() / 2f;
 
             float targetCenterY =
-                    target.getY()
-                            + target.getHeight() / 2f;
+                    target.getY() + target.getHeight() / 2f;
 
-            float dx =
-                    targetCenterX - centerX;
+            float dx = targetCenterX - centerX;
+            float dy = targetCenterY - centerY;
 
-            float dy =
-                    targetCenterY - centerY;
-
-            float distanceSquared =
-                    dx * dx + dy * dy;
+            float distanceSquared = dx * dx + dy * dy;
 
             if (distanceSquared <= radiusSquared) {
+                target.damage(damage);
 
-                /*
-                 * Наносим AoE-урон.
-                 */
-                target.damage(
-                        damage
-                );
-
-                /*
-                 * Создаём обычный LocalCombatHit,
-                 * чтобы существующая система попапов
-                 * показала цифру урона над этой целью.
-                 */
                 if (hitListener != null) {
-
                     hitListener.accept(
                             new LocalCombatHit(
                                     target.getId(),
                                     targetCenterX,
                                     targetCenterY,
-                                    damage
+                                    damage,
+                                    damageType
                             )
                     );
                 }
             }
         }
     }
+
 
     public void damageLine(
             float startX,
@@ -549,5 +653,7 @@ public class LocalCombatSystem {
         activeSwings.clear();
 
         hitTargets.clear();
+
+        swingDamageTypes.clear();
     }
 }

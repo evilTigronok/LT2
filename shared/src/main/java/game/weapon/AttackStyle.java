@@ -7,5 +7,6 @@ public enum AttackStyle {
     SLASH,
     STAB,
     SMASH,
-    SHOOT
+    SHOOT,
+    QUICK_SWING
 }

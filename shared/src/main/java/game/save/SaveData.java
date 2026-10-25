@@ -65,6 +65,13 @@ public class SaveData {
 
     public boolean meleeActive = true;
 
+    /*
+     * Артефакты: предметы в инвентаре и ID по каждому из 4 слотов.
+     * Старые сохранения без этих полей автоматически получают пустые списки.
+     */
+    public List<String> artifactIds = new ArrayList<>();
+    public List<String> equippedArtifactIds = new ArrayList<>();
+
     public SaveData() {
     }
 
@@ -78,6 +85,11 @@ public class SaveData {
 
         public int locationX;
         public int locationY;
+
+        // Включён ли режим с отображением персонажа-стикмена.
+        public boolean oneHpMode = false;
+
+        public boolean hardcoreMode = false;
     }
 
     public static class WorldSaveData {

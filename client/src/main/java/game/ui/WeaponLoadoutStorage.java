@@ -9,8 +9,8 @@ import java.nio.file.StandardOpenOption;
 import java.util.Properties;
 
 /**
- * Локальное сохранение двух ведущих слотов оружия.
- * Сохраняются только стабильные ID оружия, а не сами объекты Weapon.
+ * Локальное сохранение ведущих слотов оружия.
+ * Экипировка хранится отдельно для каждого игрового слота.
  */
 public final class WeaponLoadoutStorage {
 
@@ -19,13 +19,20 @@ public final class WeaponLoadoutStorage {
 
     private final Path file;
 
-    public WeaponLoadoutStorage(String username) {
+    public WeaponLoadoutStorage(String username, int saveSlot) {
+        if (saveSlot < 1 || saveSlot > 3) {
+            throw new IllegalArgumentException(
+                    "Номер слота должен быть от 1 до 3"
+            );
+        }
+
         String safeUsername = sanitizeUsername(username);
+
         this.file = Path.of(
                 System.getProperty("user.home"),
                 ".lt2",
                 "saves",
-                safeUsername + ".properties"
+                safeUsername + "_slot_" + saveSlot + "_loadout.properties"
         );
     }
 
@@ -59,8 +66,11 @@ public final class WeaponLoadoutStorage {
             )) {
                 properties.store(output, "LT2 weapon loadout");
             }
-        } catch (IOException ignored) {
-            // Ошибка сохранения не должна ломать игровой процесс.
+        } catch (IOException e) {
+            System.err.println(
+                    "Не удалось сохранить экипировку в " + file
+            );
+            e.printStackTrace();
         }
     }
 
@@ -73,8 +83,11 @@ public final class WeaponLoadoutStorage {
 
         try (InputStream input = Files.newInputStream(file)) {
             properties.load(input);
-        } catch (IOException ignored) {
-            // Повреждённое/недоступное сохранение трактуем как отсутствие сохранения.
+        } catch (IOException e) {
+            System.err.println(
+                    "Не удалось загрузить экипировку из " + file
+            );
+            e.printStackTrace();
         }
 
         return properties;

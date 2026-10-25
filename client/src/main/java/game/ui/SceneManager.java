@@ -25,6 +25,11 @@ public class SceneManager {
 
     private String username;
 
+    private int pendingSlot = 1;
+
+    private boolean pendingOneHpMode = false;
+    private boolean pendingHardcoreMode = false;
+
     public SceneManager(
             Stage stage,
             NetworkClient client
@@ -37,30 +42,85 @@ public class SceneManager {
                 new HostManager();
     }
 
-    public void startNewGame(
-            Difficulty difficulty
-    ) {
+    public void startNewGame(Difficulty difficulty) {
+        startNewGame(difficulty, 1);
+    }
+
+    public void startNewGame(Difficulty difficulty, int slot) {
+        if (slot < 1 || slot > 3) {
+            throw new IllegalArgumentException(
+                    "Номер слота должен быть от 1 до 3"
+            );
+        }
 
         pendingSave = null;
-
-        pendingDifficulty =
-                difficulty;
+        pendingSlot = slot;
+        pendingDifficulty = difficulty == null
+                ? Difficulty.EXHAUSTING
+                : difficulty;
 
         show(SceneType.WORLD);
     }
-    public void continueGame(
-            SaveData save
+    public void startNewGame(
+            Difficulty difficulty,
+            int slot,
+            boolean oneHpMode
     ) {
+        if (slot < 1 || slot > 3) {
+            throw new IllegalArgumentException(
+                    "Номер слота должен быть от 1 до 3"
+            );
+        }
 
+        pendingSave = null;
+        pendingSlot = slot;
+
+        pendingDifficulty = difficulty == null
+                ? Difficulty.EXHAUSTING
+                : difficulty;
+
+        pendingOneHpMode = oneHpMode;
+
+        show(SceneType.WORLD);
+    }
+    public void startNewGame(
+            Difficulty difficulty,
+            int slot,
+            boolean oneHpMode,
+            boolean hardcoreMode
+    ) {
+        if (slot < 1 || slot > 3) {
+            throw new IllegalArgumentException(
+                    "Номер слота должен быть от 1 до 3"
+            );
+        }
+
+        pendingSave = null;
+        pendingSlot = slot;
+
+        pendingDifficulty = difficulty == null
+                ? Difficulty.EXHAUSTING
+                : difficulty;
+
+        pendingOneHpMode = oneHpMode;
+        pendingHardcoreMode = hardcoreMode;
+
+        show(SceneType.WORLD);
+    }
+
+    public void continueGame(SaveData save) {
         if (save == null) {
             return;
         }
 
-        pendingSave =
-                save;
+        pendingSave = save;
+        pendingSlot = save.slot;
+        pendingDifficulty = save.difficulty == null
+                ? Difficulty.EXHAUSTING
+                : save.difficulty;
 
-        pendingDifficulty =
-                save.difficulty;
+        pendingOneHpMode = false;
+        pendingHardcoreMode = false;
 
         show(SceneType.WORLD);
     }
@@ -154,7 +214,10 @@ public class SceneManager {
                         client,
                         username,
                         pendingSave,
-                        pendingDifficulty
+                        pendingDifficulty,
+                        pendingSlot,
+                        pendingOneHpMode,
+                        pendingHardcoreMode
                 );
 
                 client.setWorldScene(currentWorldScene);

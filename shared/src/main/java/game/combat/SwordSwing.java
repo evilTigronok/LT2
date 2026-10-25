@@ -48,6 +48,8 @@ public class SwordSwing {
 
     private boolean finished;
 
+    private final boolean fixedOrigin;
+
     public SwordSwing(
             float originX,
             float originY,
@@ -56,36 +58,49 @@ public class SwordSwing {
             float damage,
             AttackStyle style
     ) {
+        this(
+                originX,
+                originY,
+                directionX,
+                directionY,
+                damage,
+                style,
+                false
+        );
+    }
 
+    public SwordSwing(
+            float originX,
+            float originY,
+            float directionX,
+            float directionY,
+            float damage,
+            AttackStyle style,
+            boolean fixedOrigin
+    ) {
         this.originX = originX;
         this.originY = originY;
 
-        float length =
-                (float) Math.sqrt(
-                        directionX * directionX +
-                                directionY * directionY
-                );
+        float length = (float) Math.sqrt(
+                directionX * directionX +
+                        directionY * directionY
+        );
 
         if (length < 0.0001f) {
-
             this.directionX = 0f;
             this.directionY = 1f;
-
         } else {
-
-            this.directionX =
-                    directionX / length;
-
-            this.directionY =
-                    directionY / length;
+            this.directionX = directionX / length;
+            this.directionY = directionY / length;
         }
 
         this.damage = damage;
 
-        this.style =
-                style == null
-                        ? AttackStyle.SWING
-                        : style;
+        this.style = style == null
+                ? AttackStyle.SWING
+                : style;
+
+        this.fixedOrigin = fixedOrigin;
 
         this.elapsed = 0f;
         this.finished = false;
@@ -95,12 +110,23 @@ public class SwordSwing {
      * Обновляет позицию игрока, относительно которой
      * должен находиться меч.
      */
-    public void setOrigin(
-            float x,
-            float y
-    ) {
-        this.originX = x;
-        this.originY = y;
+    public void setOrigin(float x, float y) {
+        if (!fixedOrigin) {
+            this.originX = x;
+            this.originY = y;
+        }
+    }
+    public float getDuration() {
+        if (style == AttackStyle.THRUST
+                || style == AttackStyle.STAB) {
+            return 0.18f;
+        }
+
+        if (style == AttackStyle.QUICK_SWING) {
+            return 0.15f;
+        }
+
+        return DURATION;
     }
 
     /**
@@ -118,9 +144,8 @@ public class SwordSwing {
                         deltaSeconds
                 );
 
-        if (elapsed >= DURATION) {
-
-            elapsed = DURATION;
+        if (elapsed >= getDuration()) {
+            elapsed = getDuration();
             finished = true;
         }
     }
@@ -154,17 +179,15 @@ public class SwordSwing {
     }
 
     public float getProgress() {
+        float duration = getDuration();
 
-        if (DURATION <= 0f) {
+        if (duration <= 0f) {
             return 1f;
         }
 
         return Math.max(
                 0f,
-                Math.min(
-                        1f,
-                        elapsed / DURATION
-                )
+                Math.min(1f, elapsed / duration)
         );
     }
 
@@ -173,17 +196,11 @@ public class SwordSwing {
      * первоначального направления атаки.
      */
     public float getCurrentAngleDegrees() {
+        float arc = style == AttackStyle.QUICK_SWING
+                ? 85f
+                : ARC_DEGREES;
 
-        /*
-         * Начинаем с левой части дуги
-         * и заканчиваем на правой.
-         */
-        float start =
-                -ARC_DEGREES / 2f;
-
-        return start +
-                ARC_DEGREES *
-                        getProgress();
+        return -arc / 2f + arc * getProgress();
     }
 
     /**
@@ -191,141 +208,127 @@ public class SwordSwing {
      * в мировых координатах.
      */
     public float getWorldAngleRadians() {
+        float baseAngle = (float) Math.atan2(directionY, directionX);
 
-        float baseAngle =
-                (float) Math.atan2(
-                        directionY,
-                        directionX
-                );
+        if (style == AttackStyle.THRUST
+                || style == AttackStyle.STAB) {
+            return baseAngle;
+        }
 
-        return baseAngle +
-                (float) Math.toRadians(
-                        getCurrentAngleDegrees()
-                );
+        return baseAngle
+                + (float) Math.toRadians(getCurrentAngleDegrees());
     }
 
     /**
-     * Начальная точка лезвия.
+     * Дистанция от запястья до центра спрайта.
+     * Расчёт должен совпадать с renderEquippedWeapon().
      */
+    private float getVisualDistance() {
+        float progress = getProgress();
+
+        if (style == AttackStyle.THRUST
+                || style == AttackStyle.STAB) {
+
+            float extension;
+
+            if (progress < 0.65f) {
+                extension = progress / 0.65f;
+            } else {
+                extension = 1.0f
+                        - (progress - 0.65f) / 0.35f * 0.25f;
+            }
+
+            extension = Math.max(
+                    0.0f,
+                    Math.min(1.0f, extension)
+            );
+
+            return 24.0f + 38.0f * extension;
+        }
+
+        return 24.0f
+                + (float) Math.sin(progress * Math.PI) * 8.0f;
+    }
+
     /**
-     * Начальная точка оружия.
+     * X-координата центра спрайта оружия.
+     */
+    private float getVisualHandX() {
+        float angle = getWorldAngleRadians();
+
+        float dirX = (float) Math.cos(angle);
+        float dirY = (float) Math.sin(angle);
+
+        float shoulderX = dirX >= 0.0f ? 22.0f : -22.0f;
+
+        float handX = originX
+                + shoulderX
+                + dirX * (31.0f + getVisualDistance());
+
+        if (dirY <= 0.65f && Math.abs(dirX) > 0.65f) {
+            handX += Math.signum(dirX) * 7.0f;
+        }
+
+        return handX;
+    }
+
+    /**
+     * Y-координата центра спрайта оружия.
+     */
+    private float getVisualHandY() {
+        float angle = getWorldAngleRadians();
+
+        float dirX = (float) Math.cos(angle);
+        float dirY = (float) Math.sin(angle);
+
+        float handY = originY
+                - 19.0f
+                + dirY * (31.0f + getVisualDistance());
+
+        if (dirY < -0.35f) {
+            // То же смещение, которое применяется к мечу при атаке вверх.
+            handY -= 20.0f;
+        } else if (dirY > 0.65f) {
+            handY += 18.0f;
+        } else if (Math.abs(dirX) > 0.65f) {
+            handY += 8.0f;
+        }
+
+        return handY;
+    }
+
+
+    /**
+     * Начало отрезка хитбокса, центрированного на спрайте.
      */
     public float getStartX() {
+        float angle = getWorldAngleRadians();
 
-        /*
-         * Для выпада оружие выходит непосредственно
-         * из персонажа по направлению атаки.
-         */
-        if (style == AttackStyle.THRUST
-                || style == AttackStyle.STAB) {
-
-            return originX
-                    + directionX * 12f;
-        }
-
-        float angle =
-                getWorldAngleRadians();
-
-        return originX
-                + (float) Math.cos(angle) * 12f;
+        return getVisualHandX()
+                - (float) Math.cos(angle) * SWORD_LENGTH / 2.0f;
     }
 
-
-    /**
-     * Начальная точка оружия.
-     */
     public float getStartY() {
+        float angle = getWorldAngleRadians();
 
-        if (style == AttackStyle.THRUST
-                || style == AttackStyle.STAB) {
-
-            return originY
-                    + directionY * 12f;
-        }
-
-        float angle =
-                getWorldAngleRadians();
-
-        return originY
-                + (float) Math.sin(angle) * 12f;
+        return getVisualHandY()
+                - (float) Math.sin(angle) * SWORD_LENGTH / 2.0f;
     }
 
-
     /**
-     * Конечная точка оружия.
+     * Конец отрезка хитбокса, центрированного на спрайте.
      */
     public float getEndX() {
+        float angle = getWorldAngleRadians();
 
-        /*
-         * THRUST / STAB:
-         *
-         * оружие не вращается по дуге,
-         * а совершает прямой выпад.
-         *
-         * В начале анимации копьё короткое,
-         * затем полностью выдвигается.
-         */
-        if (style == AttackStyle.THRUST
-                || style == AttackStyle.STAB) {
-
-            float progress =
-                    getProgress();
-
-            /*
-             * Небольшая задержка в начале,
-             * затем быстрый выпад.
-             */
-            float thrustProgress =
-                    Math.min(
-                            1f,
-                            progress * 1.6f
-                    );
-
-            float length =
-                    20f + 90f * thrustProgress;
-
-            return originX
-                    + directionX * length;
-        }
-
-        float angle =
-                getWorldAngleRadians();
-
-        return originX
-                + (float) Math.cos(angle) *
-                SwordSwing.SWORD_LENGTH;
+        return getVisualHandX()
+                + (float) Math.cos(angle) * SWORD_LENGTH / 2.0f;
     }
 
-
-    /**
-     * Конечная точка оружия.
-     */
     public float getEndY() {
+        float angle = getWorldAngleRadians();
 
-        if (style == AttackStyle.THRUST
-                || style == AttackStyle.STAB) {
-
-            float progress =
-                    getProgress();
-
-            float thrustProgress =
-                    Math.min(
-                            1f,
-                            progress * 1.6f
-                    );
-
-            float length =
-                    20f + 90f * thrustProgress;
-
-            return originY
-                    + directionY * length;
-        }
-
-        float angle =
-                getWorldAngleRadians();
-
-        return originY
-                + (float) Math.sin(angle) *
-                SwordSwing.SWORD_LENGTH;
+        return getVisualHandY()
+                + (float) Math.sin(angle) * SWORD_LENGTH / 2.0f;
     }
 }

@@ -6,6 +6,7 @@ import game.save.SaveManager;
 import javafx.geometry.Pos;
 import javafx.scene.Parent;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
@@ -20,6 +21,12 @@ public class SingleplayerScene {
 
     private final ComboBox<Difficulty> difficultyBox =
             new ComboBox<>();
+
+    private final CheckBox oneHpModeBox =
+            new CheckBox("Режим 1 HP (стикмен)");
+
+    private final CheckBox hardcoreModeBox =
+            new CheckBox("Режим Hardcore");
 
     public SingleplayerScene(
             SceneManager sceneManager
@@ -52,7 +59,8 @@ public class SingleplayerScene {
         root.getChildren().addAll(
                 title,
                 new Label("Сложность новой игры:"),
-                difficultyBox
+                difficultyBox,
+                oneHpModeBox
         );
 
         for (int slot = 1; slot <= 3; slot++) {
@@ -117,9 +125,11 @@ public class SingleplayerScene {
                 );
 
         newGame.setOnAction(e -> {
-
             sceneManager.startNewGame(
-                    difficultyBox.getValue()
+                    difficultyBox.getValue(),
+                    slot,
+                    oneHpModeBox.isSelected(),
+                    hardcoreModeBox.isSelected()
             );
         });
 

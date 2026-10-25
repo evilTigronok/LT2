@@ -7,7 +7,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class AncientAngelRotatingStream {
 
-    private static final float DEFAULT_LIFETIME = 400.0f;
+    private static final float DEFAULT_LIFETIME = 40000.0f;
     private static final float DEFAULT_SPAWN_INTERVAL = 0.1f;
     private static final float DEFAULT_ROTATION_SPEED =
             (float) Math.toRadians(30.0);

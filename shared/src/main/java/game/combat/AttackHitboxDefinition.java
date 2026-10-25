@@ -48,6 +48,15 @@ public class AttackHitboxDefinition {
                     0f
             );
 
+            // Быстрый взмах лёгким мечом.
+            case QUICK_SWING -> new AttackHitboxDefinition(
+                    Shape.SECTOR,
+                    90f,
+                    0f,
+                    30f,
+                    0f
+            );
+
             // Прямой выпад.
             case THRUST -> new AttackHitboxDefinition(
                     Shape.RECTANGLE,

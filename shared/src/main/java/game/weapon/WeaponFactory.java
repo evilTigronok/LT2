@@ -271,6 +271,224 @@ public final class WeaponFactory {
         );
     }
 
+
+    /** Клинок из Материального проклятия. */
+    public static Weapon createMaterialCurseBlade() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.PHYSICAL, 5f, 0.25f)),
+                AttackStyle.QUICK_SWING, 1, 0, false, 4f, 0f, 0f
+        );
+
+        AbilityDefinition passive = new AbilityDefinition(
+                "material_curse_artifact_lock",
+                "Проклятие артефактов",
+                "Занимает все четыре слота артефактов и заменяет их "
+                        + "неудаляемыми копиями «Проклятой имитации души»."
+        );
+
+        return new Weapon(
+                "material_curse_blade",
+                "Клинок из Материального проклятия",
+                ItemQuality.MIGHTY,
+                WeaponType.MELEE,
+                40f,
+                attack,
+                new AbilityDefinition(
+                        "material_curse_blade_trick",
+                        "Трюк",
+                        "Способность ещё не определена."
+                ),
+                passive
+        );
+    }
+
+    /** Деревянный меч. */
+    public static Weapon createWoodenSword() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.PHYSICAL, 3f, 1.0f)),
+                AttackStyle.QUICK_SWING, 1, 0, false, 1f, 0f, 0f
+        );
+
+        return new Weapon(
+                "wooden_sword",
+                "Деревянный меч",
+                ItemQuality.WEAK,
+                WeaponType.MELEE,
+                4f,
+                attack,
+                null,
+                null
+        );
+    }
+
+    /** Магматический клеймор. */
+    public static Weapon createMagmaticClaymore() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.FIRE, 8f, 2.0f)),
+                AttackStyle.SWING, 1, 0, false, 0.25f, 0f, 0f
+        );
+
+        AbilityDefinition trick = new AbilityDefinition(
+                "magmatic_claymore_field",
+                "Магматическое поле",
+                "На 7 секунд создаёт поле: все существа получают "
+                        + "7 + 70% огненного урона в секунду. "
+                        + "Владелец получает на 90% меньше урона. "
+                        + "Перезарядка: 17 секунд."
+        );
+
+        AbilityDefinition passive = new AbilityDefinition(
+                "magmatic_claymore_passive",
+                "Магматическое пламя",
+                "Скорость передвижения −25%. Огненный урон +25%. "
+                        + "Попадания ближними неогненными стихийными "
+                        + "умениями дополнительно наносят 30% урона умения огнём."
+        );
+
+        return new Weapon(
+                "magmatic_claymore",
+                "Магматический клеймор",
+                ItemQuality.RARE,
+                WeaponType.MELEE,
+                22f,
+                attack,
+                trick,
+                passive
+        );
+    }
+
+    /** Рассвет. */
+    public static Weapon createDawn() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.FIRE, 5f, 1.0f)),
+                AttackStyle.SWING, 1, 0, false, 1f, 0f, 0f
+        );
+
+        AbilityDefinition trick = new AbilityDefinition(
+                "dawn_finisher",
+                "Финальный удар",
+                "Немедленно выполняет финальную атаку серии. "
+                        + "Перезарядка: 9 секунд."
+        );
+
+        return new Weapon(
+                "dawn",
+                "Рассвет",
+                ItemQuality.MIGHTY,
+                WeaponType.MELEE,
+                20f,
+                attack,
+                trick,
+                null
+        );
+    }
+
+    /** Зенит. */
+    public static Weapon createZenith() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.PHYSICAL, 9f, 0.60f)),
+                AttackStyle.SWING, 1, 0, false, 2f, 0f, 0f
+        );
+
+        AbilityDefinition trick = new AbilityDefinition(
+                "zenith_overdrive",
+                "Перегрузка",
+                "На 6 секунд увеличивает размер атак и скорость атак на 50%; "
+                        + "атаки дополнительно наносят 6% чистого урона. "
+                        + "Перезарядка: 18 секунд."
+        );
+
+        AbilityDefinition passive = new AbilityDefinition(
+                "zenith_spin",
+                "Вращение",
+                "При удержании ЛКМ меч вращается и постепенно увеличивает "
+                        + "скорость владельца. При бонусе скорости +100% "
+                        + "владелец получает на 33% меньше урона. "
+                        + "ПКМ во время вращения парирует атаку; "
+                        + "перезарядка парирования — 7 секунд."
+        );
+
+        return new Weapon(
+                "zenith",
+                "Зенит",
+                ItemQuality.MIGHTY,
+                WeaponType.MELEE,
+                20f,
+                attack,
+                trick,
+                passive
+        );
+    }
+
+    /** Сумерки. */
+    public static Weapon createTwilight() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.PHYSICAL, 17f, 1.0f)),
+                AttackStyle.QUICK_SWING, 1, 0, false, 0.5f, 0f, 0f
+        );
+
+        AbilityDefinition trick = new AbilityDefinition(
+                "twilight_trick",
+                "Трюк",
+                "Способность ещё не определена."
+        );
+
+        AbilityDefinition passive = new AbilityDefinition(
+                "twilight_rush",
+                "Сумеречный рывок",
+                "Удержание ЛКМ наносит урон аурой. Отпускание ЛКМ "
+                        + "выполняет круговой удар с рывком. Попавшая цель "
+                        + "на 3 секунды теряет 40% скорости передвижения "
+                        + "и 33% скорости атак; затем получает 10 урона "
+                        + "каждые 0,25 секунды в течение 8 секунд. "
+                        + "Повторное наложение обновляет длительность."
+        );
+
+        return new Weapon(
+                "twilight",
+                "Сумерки",
+                ItemQuality.MIGHTY,
+                WeaponType.MELEE,
+                17f,
+                attack,
+                trick,
+                passive
+        );
+    }
+
+    /** Завтрашний день. */
+    public static Weapon createTomorrow() {
+        AttackDefinition attack = new AttackDefinition(
+                List.of(new DamagePart(DamageType.PHYSICAL, 100f, 1.0f)),
+                AttackStyle.SWING, 1, 0, false, 0.25f, 0f, 0f
+        );
+
+        AbilityDefinition trick = new AbilityDefinition(
+                "tomorrow_trick",
+                "Трюк",
+                "Способность ещё не определена."
+        );
+
+        AbilityDefinition passive = new AbilityDefinition(
+                "tomorrow_aura",
+                "Аура Завтрашнего дня",
+                "Пока оружие находится в руках, получаемый урон "
+                        + "снижен на 33%, скорость передвижения снижена на 25%."
+        );
+
+        return new Weapon(
+                "tomorrow",
+                "Завтрашний день",
+                ItemQuality.DIVINE,
+                WeaponType.MELEE,
+                57f,
+                attack,
+                trick,
+                passive
+        );
+    }
+
+
     @FunctionalInterface
     public interface ProjectileOriginProvider {
         float[] getOrigin();

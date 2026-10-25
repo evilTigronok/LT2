@@ -17,8 +17,8 @@ public class RangedProjectile {
     private float x;
     private float y;
 
-    private final float directionX;
-    private final float directionY;
+    private float directionX;
+    private float directionY;
 
     private float travelledDistance;
 
@@ -230,6 +230,21 @@ public class RangedProjectile {
 
             finished = true;
         }
+    }
+
+    /** Плавно доворачивает снаряд к цели, не меняя его скорость. */
+    public void steerToward(float targetX, float targetY, float maxTurnRadians) {
+        if (finished || maxTurnRadians <= 0f) return;
+        float dx = targetX - x;
+        float dy = targetY - y;
+        if (dx * dx + dy * dy < 0.0001f) return;
+        double current = Math.atan2(directionY, directionX);
+        double desired = Math.atan2(dy, dx);
+        double difference = Math.atan2(Math.sin(desired - current), Math.cos(desired - current));
+        double turn = Math.max(-maxTurnRadians, Math.min(maxTurnRadians, difference));
+        double next = current + turn;
+        directionX = (float) Math.cos(next);
+        directionY = (float) Math.sin(next);
     }
 
     public boolean hasHitTarget(
